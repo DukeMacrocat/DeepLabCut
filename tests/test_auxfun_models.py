@@ -1,12 +1,14 @@
-"""
-DeepLabCut2.0 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
-Please see AUTHORS for contributors.
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/main/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-"""
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,9 +21,11 @@ from deeplabcut.utils.auxfun_models import MODELTYPE_FILEPATH_MAP, check_for_wei
 class CheckForWeightsTestCase(unittest.TestCase):
     def test_filepaths_for_modeltypes(self):
         with TemporaryDirectory() as tmpdir:
-            with patch("deeplabcut.utils.auxfun_models.download_weights") as mocked_download:
+            with patch(
+                "deeplabcut.utils.auxfun_models.download_weights"
+            ) as mocked_download:
                 for modeltype, expected_path in MODELTYPE_FILEPATH_MAP.items():
-                    actual_path, _ = check_for_weights(modeltype, Path(tmpdir), 1)
+                    actual_path = check_for_weights(modeltype, Path(tmpdir))
                 self.assertIn(str(expected_path), actual_path)
                 if "efficientnet" in modeltype:
                     mocked_download.assert_called_with(
@@ -33,8 +37,5 @@ class CheckForWeightsTestCase(unittest.TestCase):
                     )
 
     def test_bad_modeltype(self):
-        actual_path, actual_num_shuffles = check_for_weights(
-            "dummymodel", "nonexistentpath", 1
-        )
+        actual_path = check_for_weights("dummymodel", "nonexistentpath")
         self.assertEqual(actual_path, "nonexistentpath")
-        self.assertEqual(actual_num_shuffles, -1)

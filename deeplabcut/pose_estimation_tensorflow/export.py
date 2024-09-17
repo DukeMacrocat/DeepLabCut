@@ -1,17 +1,19 @@
-"""
-DeepLabCut2.0 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
-
-Please see AUTHORS for contributors.
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-"""
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
 import glob
 import os
 import shutil
 import tarfile
+from pathlib import Path
 
 import numpy as np
 import ruamel.yaml
@@ -130,26 +132,9 @@ def load_model(cfg, shuffle=1, trainingsetindex=0, TFGPUinference=True, modelpre
             % (shuffle, train_fraction)
         )
 
-    # Check which snapshots are available and sort them by # iterations
-    try:
-        Snapshots = np.array(
-            [
-                fn.split(".")[0]
-                for fn in os.listdir(os.path.join(model_folder, "train"))
-                if "index" in fn
-            ]
-        )
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Snapshots not found! It seems the dataset for shuffle %s has not been trained/does not exist.\n Please train it before trying to export.\n Use the function 'train_network' to train the network for shuffle %s."
-            % (shuffle, shuffle)
-        )
-
-    if len(Snapshots) == 0:
-        raise FileNotFoundError(
-            "The train folder for iteration %s and shuffle %s exists, but no snapshots were found.\n Please train this model before trying to export.\n Use the function 'train_network' to train the network for iteration %s shuffle %s."
-            % (cfg["iteration"], shuffle, cfg["iteration"], shuffle)
-        )
+    Snapshots = auxiliaryfunctions.get_snapshots_from_folder(
+        train_folder=Path(model_folder) / "train",
+    )
 
     if cfg["snapshotindex"] == "all":
         print(
@@ -158,9 +143,6 @@ def load_model(cfg, shuffle=1, trainingsetindex=0, TFGPUinference=True, modelpre
         snapshotindex = -1
     else:
         snapshotindex = cfg["snapshotindex"]
-
-    increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
-    Snapshots = Snapshots[increasing_indices]
 
     ####################################
     ### Load and setup CNN part detector
@@ -224,7 +206,9 @@ def tf_to_pb(sess, checkpoint, output, output_dir=None):
     # create frozen graph from pbtxt file
     pb_file = os.path.normpath(output_dir + "/" + ckpt_base + ".pb")
     frozen_graph_def = tf.compat.v1.graph_util.convert_variables_to_constants(
-        sess, sess.graph_def, output,
+        sess,
+        sess.graph_def,
+        output,
     )
     with open(pb_file, "wb") as file:
         file.write(frozen_graph_def.SerializeToString())

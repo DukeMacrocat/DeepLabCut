@@ -53,7 +53,7 @@ Now, please make a [pull request](https://github.com/DeepLabCut/DeepLabCut/pull/
 - How you modified the code and what new functionality it has.
 - DOCSTRING update for your change
 - A working example of how it works for users. 
-- If it's a function that also can be used in downstream steps (i.e. could be plotted) we ask you (1) highlight this, and (2) idealy you provide that functionality as well. If you have any questions, please reach out: admin@deeplabcut.org 
+- If it's a function that also can be used in downstream steps (i.e. could be plotted) we ask you (1) highlight this, and (2) ideally you provide that functionality as well. If you have any questions, please reach out: admin@deeplabcut.org 
 
 **TestScript outputs:**
 
@@ -65,6 +65,10 @@ Now, please make a [pull request](https://github.com/DeepLabCut/DeepLabCut/pull/
 - Please run black on the code to conform to our Black code style (see more at https://pypi.org/project/black/). 
 - Please assign a reviewer, typically @AlexEMG, @mmathislab, or @jeylau (i/e. the [core-developers](https://github.com/orgs/DeepLabCut/teams/core-developers/members))
 
+**Code headers**
+
+- The code headers can be standardized by running `python tools/update_license_headers.py`
+- Edit `NOTICE.yml` to update the header. 
 
 **DeepLabCut is an open-source tool and has benefited from suggestions and edits by many individuals:**
 

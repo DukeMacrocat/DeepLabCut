@@ -1,13 +1,26 @@
-from PySide2 import QtWidgets
-from PySide2.QtCore import Qt
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
+import os
+
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt, Slot
 from deeplabcut.gui.dlc_params import DLCParams
 from deeplabcut.gui.widgets import ConfigEditor
 
 
 def _create_label_widget(
-    text: str, style: str = "", margins: tuple = (20, 10, 0, 10),
+    text: str,
+    style: str = "",
+    margins: tuple = (20, 10, 0, 10),
 ) -> QtWidgets.QLabel:
-
     label = QtWidgets.QLabel(text)
     label.setContentsMargins(*margins)
     label.setStyleSheet(style)
@@ -18,7 +31,6 @@ def _create_label_widget(
 def _create_horizontal_layout(
     alignment=None, spacing: int = 20, margins: tuple = (20, 0, 0, 0)
 ) -> QtWidgets.QHBoxLayout():
-
     layout = QtWidgets.QHBoxLayout()
     layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
     layout.setSpacing(spacing)
@@ -30,7 +42,6 @@ def _create_horizontal_layout(
 def _create_vertical_layout(
     alignment=None, spacing: int = 20, margins: tuple = (20, 0, 0, 0)
 ) -> QtWidgets.QVBoxLayout():
-
     layout = QtWidgets.QVBoxLayout()
     layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
     layout.setSpacing(spacing)
@@ -40,9 +51,10 @@ def _create_vertical_layout(
 
 
 def _create_grid_layout(
-    alignment=None, spacing: int = 20, margins: tuple = None,
-) -> QtWidgets.QGridLayout():
-
+    alignment=None,
+    spacing: int = 20,
+    margins: tuple = None,
+) -> QtWidgets.QGridLayout:
     layout = QtWidgets.QGridLayout()
     layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
     layout.setSpacing(spacing)
@@ -54,11 +66,11 @@ def _create_grid_layout(
 
 class BodypartListWidget(QtWidgets.QListWidget):
     def __init__(
-        self, 
-        root: QtWidgets.QMainWindow, 
-        parent: QtWidgets.QWidget, 
-        # all_bodyparts: List 
-        # NOTE: Is there a case where a specific list should 
+        self,
+        root: QtWidgets.QMainWindow,
+        parent: QtWidgets.QWidget,
+        # all_bodyparts: List
+        # NOTE: Is there a case where a specific list should
         # have bodyparts other than the root? I don't think so.
     ):
         super(BodypartListWidget, self).__init__()
@@ -71,7 +83,7 @@ class BodypartListWidget(QtWidgets.QListWidget):
         self.setMaximumWidth(600)
         self.setMaximumHeight(500)
         self.hide()
-        
+
         self.addItems(self.root.all_bodyparts)
         self.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
 
@@ -79,24 +91,18 @@ class BodypartListWidget(QtWidgets.QListWidget):
 
     def update_selected_bodyparts(self):
         self.selected_bodyparts = [item.text() for item in self.selectedItems()]
-        self.root.logger.info(
-            f"Selected bodyparts:\n\t{self.selected_bodyparts}"
-        )
+        self.root.logger.info(f"Selected bodyparts:\n\t{self.selected_bodyparts}")
 
 
 class VideoSelectionWidget(QtWidgets.QWidget):
-    def __init__(
-        self, 
-        root: QtWidgets.QMainWindow, 
-        parent: QtWidgets.QWidget
-    ):
+    def __init__(self, root: QtWidgets.QMainWindow, parent: QtWidgets.QWidget):
         super(VideoSelectionWidget, self).__init__(parent)
-        
+
         self.root = root
         self.parent = parent
-        
+
         self._init_layout()
-    
+
     def _init_layout(self):
         layout = _create_horizontal_layout()
 
@@ -115,7 +121,9 @@ class VideoSelectionWidget(QtWidgets.QWidget):
         self.root.video_files_.connect(self._update_video_selection)
 
         # Number of selected videos text
-        self.selected_videos_text = QtWidgets.QLabel("") #updated when videos are selected
+        self.selected_videos_text = QtWidgets.QLabel(
+            ""
+        )  # updated when videos are selected
 
         # Clear video selection
         self.clear_videos = QtWidgets.QPushButton("Clear selection")
@@ -146,18 +154,26 @@ class VideoSelectionWidget(QtWidgets.QWidget):
             self.select_video_button.setText("Select videos")
 
     def select_videos(self):
-        cwd = self.root.project_folder()
+        cwd = self.root.project_folder
+
+        # Create a filter string with both lowercase and uppercase extensions
+
+        video_types = [f"*.{ext.lower()}" for ext in DLCParams.VIDEOTYPES[1:]] + [
+            f"*.{ext.upper()}" for ext in DLCParams.VIDEOTYPES[1:]
+        ]
+        video_files = f"Videos ({' '.join(video_types)})"
+
         filenames = QtWidgets.QFileDialog.getOpenFileNames(
             self,
             "Select video(s) to analyze",
             cwd,
-            f"Videos ({' *.'.join(DLCParams.VIDEOTYPES)[1:]})",
+            video_files,
         )
 
         if filenames[0]:
             # Qt returns a tuple (list of files, filetype)
-            self.root.video_files = filenames[0]
-            
+            self.root.video_files = [os.path.abspath(vid) for vid in filenames[0]]
+
     def clear_selected_videos(self):
         self.root.video_files = set()
         self.root.logger.info(f"Cleared selected videos")
@@ -166,7 +182,7 @@ class VideoSelectionWidget(QtWidgets.QWidget):
 class TrainingSetSpinBox(QtWidgets.QSpinBox):
     def __init__(self, root, parent):
         super(TrainingSetSpinBox, self).__init__(parent)
-        
+
         self.root = root
         self.parent = parent
 
@@ -178,19 +194,19 @@ class TrainingSetSpinBox(QtWidgets.QSpinBox):
 class ShuffleSpinBox(QtWidgets.QSpinBox):
     def __init__(self, root, parent):
         super(ShuffleSpinBox, self).__init__(parent)
-        
+
         self.root = root
         self.parent = parent
 
-        self.setMaximum(100)
+        self.setMaximum(10_000)
         self.setValue(self.root.shuffle_value)
         self.valueChanged.connect(self.root.update_shuffle)
 
 
 class DefaultTab(QtWidgets.QWidget):
     def __init__(
-        self, 
-        root: QtWidgets.QMainWindow, 
+        self,
+        root: QtWidgets.QMainWindow,
         parent: QtWidgets.QWidget = None,
         h1_description: str = "",
     ):
@@ -228,10 +244,7 @@ class DefaultTab(QtWidgets.QWidget):
 
 class EditYamlButton(QtWidgets.QPushButton):
     def __init__(
-        self, 
-        button_label: str, 
-        filepath: str, 
-        parent: QtWidgets.QWidget = None
+        self, button_label: str, filepath: str, parent: QtWidgets.QWidget = None
     ):
         super(EditYamlButton, self).__init__(button_label)
         self.filepath = filepath

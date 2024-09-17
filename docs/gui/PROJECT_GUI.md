@@ -3,16 +3,15 @@
 
 As some users may be more comfortable working with an interactive interface, we wanted to provide an easy-entry point to the software. All the main functionality is available in an  easy-to-deploy GUI interface. Thus, while the many advanced features are not fully available in this Project GUI, we hope this gets more users up-and-running quickly.
 
-**Release notes:** As of DeepLabCut 2.1+ now provide a full front-end user experience for DeepLabCut, and as of 2.3+ we changed the GUI from wxPython to PySide2 with napari support.
+**Release notes:** As of DeepLabCut 2.1+ now provide a full front-end user experience for DeepLabCut, and as of 2.3+ we changed the GUI from wxPython to PySide6 with napari support.
 
 ## Get Started:
 
 (1) Install DeepLabCut using the simple-install with Anaconda found [here!](how-to-install)*.
-Now that you have deeplabcut installed, just go into your env (activate DEEPLABCUT) then run:
+Now you have DeepLabCut installed, but if you want to update it, either follow the prompt in the GUI which will ask you to upgrade when a new version is available, or just go into your env (activate DEEPLABCUT) then run:
 
-` pip install --upgrade --force-reinstall 'deeplabcut[gui]'==2.3rc1 `
+` pip install 'deeplabcut[gui,modelzoo]'` *but please see [full install guide](https://deeplabcut.github.io/DeepLabCut/docs/installation.html)!
 
-*Note, currently the latest GUI is a release candidate, so you need to specifically install the `rc` version. This will change once v2.3 is stable.
 
 (2) Open the terminal and run: `python -m deeplabcut`
 
@@ -24,7 +23,7 @@ Now that you have deeplabcut installed, just go into your env (activate DEEPLABC
 Start at the Project Management Tab and work your way through the tabs to built your customized model and deploy it on new data.
 We recommend to keep the terminal visible (as well as the GUI) so you can see the ongoing processes as you step through your project, or any errors that might arise.
 
-- For specific napari-based labeling features, see the ["napari gui" docs](https://deeplabcut.github.io/DeepLabCut/docs/napariGUI.html#usage).
+- For specific napari-based labeling features, see the ["napari gui" docs](https://deeplabcut.github.io/DeepLabCut/docs/napari_GUI.html#usage).
 - To change from dark to light mode, set appearance at the top:
 <p align="center">
 <img src="https://images.squarespace-cdn.com/content/v1/57f6d51c9f74566f55ecf271/5e41b01d-3101-40b2-9c53-129d8988370f/Screen+Shot+2022-10-09+at+3.45.46+PM.png?format=2500w

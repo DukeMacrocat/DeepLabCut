@@ -1,3 +1,13 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 """
 DeepLabCut2.0 Toolbox (deeplabcut.org)
 © A. & M. Mathis Labs
@@ -9,8 +19,8 @@ Licensed under GNU Lesser General Public License v3.0
 """
 
 import os
+import tensorflow as tf
 from pathlib import Path
-
 from deeplabcut.utils import auxiliaryfunctions
 
 
@@ -21,9 +31,9 @@ MODELTYPE_FILEPATH_MAP = {
     "resnet_101": MODEL_BASE_PATH / "resnet_v1_101.ckpt",
     "resnet_152": MODEL_BASE_PATH / "resnet_v1_152.ckpt",
     "mobilenet_v2_1.0": MODEL_BASE_PATH / "mobilenet_v2_1.0_224.ckpt",
-    "mobilenet_v2_0.75":MODEL_BASE_PATH / "mobilenet_v2_0.75_224.ckpt",
+    "mobilenet_v2_0.75": MODEL_BASE_PATH / "mobilenet_v2_0.75_224.ckpt",
     "mobilenet_v2_0.5": MODEL_BASE_PATH / "mobilenet_v2_0.5_224.ckpt",
-    "mobilenet_v2_0.35":MODEL_BASE_PATH / "mobilenet_v2_0.35_224.ckpt",
+    "mobilenet_v2_0.35": MODEL_BASE_PATH / "mobilenet_v2_0.35_224.ckpt",
     "efficientnet-b0": MODEL_BASE_PATH / "efficientnet-b0" / "model.ckpt",
     "efficientnet-b1": MODEL_BASE_PATH / "efficientnet-b1" / "model.ckpt",
     "efficientnet-b2": MODEL_BASE_PATH / "efficientnet-b2" / "model.ckpt",
@@ -34,15 +44,15 @@ MODELTYPE_FILEPATH_MAP = {
 }
 
 
-def check_for_weights(modeltype, parent_path, num_shuffles):
-    """ gets local path to network weights and checks if they are present. If not, downloads them from tensorflow.org """
+def check_for_weights(modeltype, parent_path):
+    """gets local path to network weights and checks if they are present. If not, downloads them from tensorflow.org"""
 
     if modeltype not in MODELTYPE_FILEPATH_MAP.keys():
         print(
             "Currently ResNet (50, 101, 152), MobilenetV2 (1, 0.75, 0.5 and 0.35) and EfficientNet (b0-b6) are supported, please change 'resnet' entry in config.yaml!"
         )
         # Exit the function early if an unknown modeltype is provided.
-        return parent_path, -1
+        return parent_path
 
     exists = False
     model_path = parent_path / MODELTYPE_FILEPATH_MAP[modeltype]
@@ -60,7 +70,7 @@ def check_for_weights(modeltype, parent_path, num_shuffles):
         else:
             download_weights(modeltype, model_path)
 
-    return str(model_path), num_shuffles
+    return str(model_path)
 
 
 def download_weights(modeltype, model_path):
@@ -140,33 +150,40 @@ def download_model(modelname, target_dir):
         models = [
             fn
             for fn in neturls.keys()
-            if "resnet_" not in fn and "mobilenet_" not in fn
+            if "resnet_" not in fn
+            and "efficientnet" not in fn
+            and "mobilenet_" not in fn
         ]
         print("Model does not exist: ", modelname)
         print("Pick one of the following: ", models)
 
 
-def download_mpii_weights(wd):
-    """ Downloads weights pretrained on human data from DeeperCut. """
-    import urllib.request
-    from pathlib import Path
+def set_visible_devices(gputouse: int):
+    physical_devices = tf.config.list_physical_devices("GPU")
+    n_devices = len(physical_devices)
+    if gputouse >= n_devices:
+        raise ValueError(
+            f"There are {n_devices} available GPUs: {physical_devices}\nPlease choose `gputouse` in {list(range(n_devices))}."
+        )
+    tf.config.set_visible_devices(physical_devices[gputouse], "GPU")
 
-    url = [
-        "https://datasets.d2.mpi-inf.mpg.de/deepercut-models-tensorflow/mpii-single-resnet-101.data-00000-of-00001",
-        "https://datasets.d2.mpi-inf.mpg.de/deepercut-models-tensorflow/mpii-single-resnet-101.meta",
-        "https://datasets.d2.mpi-inf.mpg.de/deepercut-models-tensorflow/mpii-single-resnet-101.index",
-    ]
-    for i in url:
-        file = str(Path(i).name)
-        filename = file.replace("mpii-single-resnet-101", "snapshot-103000")
-        filename = os.path.join(wd, filename)
-        if os.path.isfile(filename):
-            print("Weights already present!")
-            break  # not checking all the 3 files.
+
+def smart_restore(restorer, sess, checkpoint_path, net_type):
+    "Restore pretrained weights, smartly redownloading them if missing."
+    try:
+        restorer.restore(sess, checkpoint_path)
+    except ValueError as e:  # The path may be wrong, or the weights no longer exist
+        dlcparent_path = auxiliaryfunctions.get_deeplabcut_path()
+        correct_model_path = os.path.join(
+            dlcparent_path,
+            MODELTYPE_FILEPATH_MAP[net_type],
+        )
+        if checkpoint_path == correct_model_path:
+            # The path is right, hence the weights are missing; we'll download them again.
+            _ = check_for_weights(net_type, Path(dlcparent_path))
+            restorer.restore(sess, checkpoint_path)
         else:
-            urllib.request.urlretrieve(i, filename)
-
-    return filename
+            raise ValueError(e)
 
 
 # Aliases for backwards-compatibility

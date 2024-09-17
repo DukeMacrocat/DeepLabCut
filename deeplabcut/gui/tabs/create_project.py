@@ -1,30 +1,43 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 import os
 from datetime import datetime
 
 import deeplabcut
 from deeplabcut.utils import auxiliaryfunctions
+from deeplabcut.gui import BASE_DIR
 from deeplabcut.gui.dlc_params import DLCParams
 from deeplabcut.gui.widgets import ClickableLabel, ItemSelectionFrame
 
-from PySide2 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets
+from PySide6.QtGui import QIcon
 
 
 class ProjectCreator(QtWidgets.QDialog):
     def __init__(self, parent):
         super(ProjectCreator, self).__init__(parent)
         self.parent = parent
-        self.setWindowTitle('New Project')
+        self.setWindowTitle("New Project")
+        self.setModal(True)
         self.setMinimumWidth(parent.screen_width // 2)
-        today = datetime.today().strftime('%Y-%m-%d')
-        self.name_default = '-'.join(('{}', '{}', today))
-        self.proj_default = ''
-        self.exp_default = ''
+        today = datetime.today().strftime("%Y-%m-%d")
+        self.name_default = "-".join(("{}", "{}", today))
+        self.proj_default = ""
+        self.exp_default = ""
         self.loc_default = parent.project_folder
 
         main_layout = QtWidgets.QVBoxLayout(self)
         self.user_frame = self.lay_out_user_frame()
         self.video_frame = self.lay_out_video_frame()
-        self.create_button = QtWidgets.QPushButton('Create')
+        self.create_button = QtWidgets.QPushButton("Create")
         self.create_button.setDefault(True)
         self.create_button.clicked.connect(self.finalize_project)
         main_layout.addWidget(self.user_frame)
@@ -33,21 +46,29 @@ class ProjectCreator(QtWidgets.QDialog):
 
     def lay_out_user_frame(self):
         user_frame = QtWidgets.QFrame(self)
-        user_frame.setFrameShape(user_frame.StyledPanel)
-        user_frame.setLineWidth(0.5)
+        user_frame.setFrameShape(user_frame.Shape.StyledPanel)
+        user_frame.setLineWidth(0)
 
-        proj_label = QtWidgets.QLabel('Project:', user_frame)
+        proj_label = QtWidgets.QLabel("Project:", user_frame)
         self.proj_line = QtWidgets.QLineEdit(self.proj_default, user_frame)
+        self.proj_line.setPlaceholderText("my project's name")
         self._default_style = self.proj_line.styleSheet()
         self.proj_line.textEdited.connect(self.update_project_name)
 
-        exp_label = QtWidgets.QLabel('Experimenter:', user_frame)
+        exp_label = QtWidgets.QLabel("Experimenter:", user_frame)
         self.exp_line = QtWidgets.QLineEdit(self.exp_default, user_frame)
+        self.exp_line.setPlaceholderText("my nickname")
         self.exp_line.textEdited.connect(self.update_experimenter_name)
 
-        loc_label = ClickableLabel('Location:', parent=user_frame)
+        loc_label = ClickableLabel("Location:", parent=user_frame)
         loc_label.signal.connect(self.on_click)
         self.loc_line = QtWidgets.QLineEdit(self.loc_default, user_frame)
+        self.loc_line.setReadOnly(True)
+        action = self.loc_line.addAction(
+            QIcon(os.path.join(BASE_DIR, "assets", "icons", "open2.png")),
+            QtWidgets.QLineEdit.TrailingPosition,
+        )
+        action.triggered.connect(self.on_click)
 
         vbox = QtWidgets.QVBoxLayout(user_frame)
         grid = QtWidgets.QGridLayout()
@@ -59,7 +80,7 @@ class ProjectCreator(QtWidgets.QDialog):
         grid.addWidget(self.loc_line, 2, 1)
         vbox.addLayout(grid)
 
-        self.madlc_box = QtWidgets.QCheckBox('Is it a multi-animal project?')
+        self.madlc_box = QtWidgets.QCheckBox("Is it a multi-animal project?")
         self.madlc_box.setChecked(False)
         vbox.addWidget(self.madlc_box)
 
@@ -71,15 +92,15 @@ class ProjectCreator(QtWidgets.QDialog):
         self.cam_combo = QtWidgets.QComboBox(video_frame)
         self.cam_combo.addItems(map(str, (1, 2)))
         self.cam_combo.currentTextChanged.connect(self.check_num_cameras)
-        ncam_label = QtWidgets.QLabel('Number of cameras:')
+        ncam_label = QtWidgets.QLabel("Number of cameras:")
         ncam_label.setBuddy(self.cam_combo)
 
-        self.copy_box = QtWidgets.QCheckBox('Copy videos to project folder')
+        self.copy_box = QtWidgets.QCheckBox("Copy videos to project folder")
         self.copy_box.setChecked(False)
 
-        browse_button = QtWidgets.QPushButton('Browse videos')
+        browse_button = QtWidgets.QPushButton("Browse videos")
         browse_button.clicked.connect(self.browse_videos)
-        clear_button = QtWidgets.QPushButton('Clear')
+        clear_button = QtWidgets.QPushButton("Clear")
         clear_button.clicked.connect(video_frame.fancy_list.clear)
 
         layout1 = QtWidgets.QHBoxLayout()
@@ -96,14 +117,18 @@ class ProjectCreator(QtWidgets.QDialog):
 
     def browse_videos(self):
         folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self, 'Please select a folder', self.loc_default,
+            self,
+            "Please select a folder",
+            self.loc_default,
         )
         if not folder:
             return
+
         for video in auxiliaryfunctions.grab_files_in_folder(
-                folder, relative=False,
+            folder,
+            relative=False,
         ):
-            if video.split('.')[1] in DLCParams.VIDEOTYPES[1:]:
+            if os.path.splitext(video)[1][1:] in DLCParams.VIDEOTYPES[1:]:
                 self.video_frame.fancy_list.add_item(video)
 
     def finalize_project(self):
@@ -111,7 +136,7 @@ class ProjectCreator(QtWidgets.QDialog):
         empty = [i for i, field in enumerate(fields) if not field.text()]
         for i, field in enumerate(fields):
             if i in empty:
-                field.setStyleSheet('border: 1px solid red;')
+                field.setStyleSheet("border: 1px solid red;")
             else:
                 field.setStyleSheet(self._default_style)
         if empty:
@@ -129,8 +154,8 @@ class ProjectCreator(QtWidgets.QDialog):
             else:
                 videos = list(self.video_frame.selected_items)
                 if not len(videos):
-                    print('Add at least a video to the project.')
-                    self.video_frame.fancy_list.setStyleSheet('border: 1px solid red')
+                    print("Add at least a video to the project.")
+                    self.video_frame.fancy_list.setStyleSheet("border: 1px solid red")
                     return
                 else:
                     self.video_frame.fancy_list.setStyleSheet(
@@ -162,7 +187,9 @@ class ProjectCreator(QtWidgets.QDialog):
         self.close()
 
     def on_click(self):
-        dirname = QtWidgets.QFileDialog.getExistingDirectory(self, 'Please select a folder', self.loc_default)
+        dirname = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Please select a folder", self.loc_default
+        )
         if not dirname:
             return
         self.loc_default = dirname

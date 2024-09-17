@@ -1,3 +1,13 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 """
 DeepLabCut2.0 Toolbox (deeplabcut.org)
 © A. & M. Mathis Labs
@@ -17,7 +27,7 @@ from matplotlib.collections import LineCollection
 from skimage import io, color
 from tqdm import trange
 
-from deeplabcut.utils.auxiliaryfunctions import attempttomakefolder
+from deeplabcut.utils import auxiliaryfunctions
 
 
 def get_cmap(n, name="hsv"):
@@ -39,7 +49,7 @@ def make_labeled_image(
     scaling=1,
     ax=None,
 ):
-    """Creating a labeled image with the original human labels, as well as the DeepLabCut's! """
+    """Creating a labeled image with the original human labels, as well as the DeepLabCut's!"""
 
     alphavalue = cfg["alphavalue"]  # .5
     dotsize = cfg["dotsize"]  # =15
@@ -301,7 +311,7 @@ def make_labeled_images_from_dataframe(
     if not destfolder:
         destfolder = os.path.dirname(images_list[0])
     tmpfolder = destfolder + "_labeled"
-    attempttomakefolder(tmpfolder)
+    auxiliaryfunctions.attempt_to_make_folder(tmpfolder)
     ic = io.imread_collection(images_list)
 
     h, w = ic[0].shape[:2]
@@ -331,7 +341,7 @@ def make_labeled_images_from_dataframe(
                 img = color.gray2rgb(ic[i])
             im.set_data(img)
             for pt, coord in zip(pts, coords):
-                pt.set_data(*coord)
+                pt.set_data(*np.expand_dims(coord, axis=1))
             if ind_bones:
                 coll.set_segments(segs[ind])
             imagename = os.path.basename(filename)

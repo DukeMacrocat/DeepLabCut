@@ -1,15 +1,14 @@
-"""
-DeepLabCut2.2 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
-Please see AUTHORS for contributors.
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-
-Adapted from DeeperCut by Eldar Insafutdinov
-https://github.com/eldar/pose-tensorflow
-"""
 import argparse
 import logging
 import os
@@ -29,6 +28,7 @@ from deeplabcut.pose_estimation_tensorflow.core.train import (
     get_optimizer,
     LearningRate,
 )
+from deeplabcut.utils import auxfun_models
 
 
 def train(
@@ -39,15 +39,46 @@ def train(
     max_to_keep=5,
     keepdeconvweights=True,
     allow_growth=True,
+    pseudo_labels="",
+    init_weights="",
+    pseudo_threshold=0.1,
+    modelfolder="",
+    traintime_resize=False,
+    video_path="",
+    superanimal=None,
+    remove_head=False,
 ):
+    # in case there was already a graph
+    tf.compat.v1.reset_default_graph()
+
     start_path = os.getcwd()
-    os.chdir(
-        str(Path(config_yaml).parents[0])
-    )  # switch to folder of config_yaml (for logging)
+    if modelfolder == "":
+        os.chdir(
+            str(Path(config_yaml).parents[0])
+        )  # switch to folder of config_yaml (for logging)
+    else:
+        os.chdir(modelfolder)
 
     setup_logging()
 
     cfg = load_config(config_yaml)
+
+    cfg["pseudo_threshold"] = pseudo_threshold
+    cfg["video_path"] = video_path
+    cfg["traintime_resize"] = traintime_resize
+
+    if superanimal is not None:
+        cfg["superanimal"] = superanimal
+
+    if pseudo_labels != "":
+        cfg["pseudo_label"] = pseudo_labels
+
+    if modelfolder != "":
+        cfg["log_dir"] = modelfolder
+        cfg["project_path"] = modelfolder
+        # have to overwrite this
+        cfg["snapshot_prefix"] = os.path.join("snapshot")
+
     if cfg["optimizer"] != "adam":
         print(
             "Setting batchsize to 1! Larger batchsize not supported for this loader:",
@@ -62,6 +93,7 @@ def train(
         cfg["pairwise_predict"] = True
 
     dataset = PoseDatasetFactory.create(cfg)
+
     batch_spec = get_batch_spec(cfg)
     batch, enqueue_op, placeholders = setup_preloading(batch_spec)
 
@@ -73,11 +105,28 @@ def train(
     merged_summaries = tf.compat.v1.summary.merge_all()
     net_type = cfg["net_type"]
 
+    if init_weights != "":
+        cfg["init_weights"] = init_weights
+        cfg["resume_weights_only"] = True
+        print("replacing default init weights with: ", init_weights)
+
     stem = Path(cfg["init_weights"]).stem
     if "snapshot" in stem and keepdeconvweights:
         print("Loading already trained DLC with backbone:", net_type)
         variables_to_restore = slim.get_variables_to_restore()
-        start_iter = int(stem.split("-")[1])
+        if cfg.get("resume_weights_only", False):
+            start_iter = 0
+        else:
+            start_iter = int(stem.split("-")[1])
+
+        if remove_head:
+            # removing the decoding layer from the checkpoint
+            temp = []
+            for variable in variables_to_restore:
+                if "pose" not in variable.name:
+                    temp.append(variable)
+            variables_to_restore = temp
+
     else:
         print("Loading ImageNet-pretrained", net_type)
         # loading backbone from ResNet, MobileNet etc.
@@ -119,7 +168,8 @@ def train(
     sess.run(tf.compat.v1.global_variables_initializer())
     sess.run(tf.compat.v1.local_variables_initializer())
 
-    restorer.restore(sess, cfg["init_weights"])
+    auxfun_models.smart_restore(restorer, sess, cfg["init_weights"], net_type)
+
     if maxiters is None:
         max_iter = int(cfg["multi_step"][-1][1])
     else:
@@ -170,7 +220,6 @@ def train(
 
         cumloss += loss_val
         train_writer.add_summary(summary, it)
-
         if it % display_iters == 0 and it > start_iter:
             logging.info(
                 "iteration: {} loss: {} scmap loss: {} locref loss: {} limb loss: {} lr: {}".format(

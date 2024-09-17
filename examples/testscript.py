@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 """
 Created on Tue Oct  2 13:56:11 2018
 @author: alex
@@ -61,7 +71,8 @@ if __name__ == "__main__":
     else:
         augmenter_type3 = "tensorpack"  # Does not work on WINDOWS
 
-    N_ITER = 5
+    N_ITER = 6
+    SAVE_ITER = 3
 
     print("CREATING PROJECT")
     path_config_file = deeplabcut.create_new_project(
@@ -129,7 +140,10 @@ if __name__ == "__main__":
     # Check the training image paths are correctly stored as arrays of strings
     trainingsetfolder = auxiliaryfunctions.get_training_set_folder(cfg)
     datafile, _ = auxiliaryfunctions.get_data_and_metadata_filenames(
-        trainingsetfolder, 0.8, 1, cfg,
+        trainingsetfolder,
+        0.8,
+        1,
+        cfg,
     )
     mlab = sio.loadmat(os.path.join(cfg["project_path"], datafile))["dataset"]
     num_images = mlab.shape[1]
@@ -153,18 +167,26 @@ if __name__ == "__main__":
     )
 
     DLC_config = deeplabcut.auxiliaryfunctions.read_plainconfig(posefile)
-    DLC_config["save_iters"] = N_ITER
+    DLC_config["save_iters"] = SAVE_ITER
     DLC_config["display_iters"] = 2
-    DLC_config["multi_step"] = [[0.001, N_ITER]]
 
     print("CHANGING training parameters to end quickly!")
     deeplabcut.auxiliaryfunctions.write_plainconfig(posefile, DLC_config)
 
     print("TRAIN")
-    deeplabcut.train_network(path_config_file)
+    deeplabcut.train_network(path_config_file, maxiters=N_ITER)
 
     print("EVALUATE")
-    deeplabcut.evaluate_network(path_config_file, plotting=True)
+    deeplabcut.evaluate_network(
+        path_config_file,
+        plotting=True,
+        per_keypoint_evaluation=True,
+        snapshots_to_evaluate=[
+            "snapshot-3",
+            "snapshot-5",
+            "snapshot-6",
+        ],  # snapshot-5 intentionally missing :)
+    )
     # deeplabcut.evaluate_network(path_config_file,plotting=True,trainingsetindex=33)
     print("CUT SHORT VIDEO AND ANALYZE (with dynamic cropping!)")
 
@@ -244,7 +266,7 @@ if __name__ == "__main__":
     print("RELABELING")
     DF = pd.read_hdf(file, "df_with_missing")
     DLCscorer = np.unique(DF.columns.get_level_values(0))[0]
-    DF.columns.set_levels([scorer.replace(DLCscorer, scorer)], level=0, inplace=True)
+    DF.columns = DF.columns.set_levels([scorer.replace(DLCscorer, scorer)], level=0)
     DF = DF.drop("likelihood", axis=1, level=2)
     DF.to_csv(
         os.path.join(
@@ -287,15 +309,14 @@ if __name__ == "__main__":
         "train/pose_cfg.yaml",
     )
     DLC_config = deeplabcut.auxiliaryfunctions.read_plainconfig(posefile)
-    DLC_config["save_iters"] = N_ITER
+    DLC_config["save_iters"] = SAVE_ITER
     DLC_config["display_iters"] = 1
-    DLC_config["multi_step"] = [[0.001, N_ITER]]
 
     print("CHANGING training parameters to end quickly!")
     deeplabcut.auxiliaryfunctions.write_config(posefile, DLC_config)
 
     print("TRAIN")
-    deeplabcut.train_network(path_config_file)
+    deeplabcut.train_network(path_config_file, maxiters=N_ITER)
 
     try:  # you need ffmpeg command line interface
         # subprocess.call(['ffmpeg','-i',video[0],'-ss','00:00:00','-to','00:00:00.4','-c','copy',newvideo])
@@ -364,7 +385,10 @@ if __name__ == "__main__":
     print("will be used for 3D testscript...")
     # TENSORPACK could fail in WINDOWS...
     deeplabcut.create_training_dataset(
-        path_config_file, Shuffles=[2], net_type=NET, augmenter_type=augmenter_type3,
+        path_config_file,
+        Shuffles=[2],
+        net_type=NET,
+        augmenter_type=augmenter_type3,
     )
 
     posefile = os.path.join(
@@ -382,15 +406,17 @@ if __name__ == "__main__":
     )
 
     DLC_config = deeplabcut.auxiliaryfunctions.read_plainconfig(posefile)
-    DLC_config["save_iters"] = 10
+    updated_max_iters = 10
+    DLC_config["save_iters"] = updated_max_iters
     DLC_config["display_iters"] = 2
-    DLC_config["multi_step"] = [[0.001, 10]]
 
     print("CHANGING training parameters to end quickly!")
     deeplabcut.auxiliaryfunctions.write_plainconfig(posefile, DLC_config)
 
     print("TRAINING shuffle 2, with smaller allocated memory")
-    deeplabcut.train_network(path_config_file, shuffle=2, allow_growth=True)
+    deeplabcut.train_network(
+        path_config_file, shuffle=2, allow_growth=True, maxiters=updated_max_iters
+    )
 
     print("ANALYZING some individual frames")
     deeplabcut.analyze_time_lapse_frames(

@@ -1,6 +1,16 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 from functools import partial
-from PySide2 import QtWidgets
-from PySide2.QtCore import Qt
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt
 
 from deeplabcut.gui.components import (
     DefaultTab,
@@ -38,6 +48,23 @@ class UnsupervizedIdTracking(DefaultTab):
         self.run_transformer_button.clicked.connect(self.run_transformer)
 
         self.main_layout.addWidget(self.run_transformer_button, alignment=Qt.AlignRight)
+
+        self.help_button = QtWidgets.QPushButton("Help")
+        self.help_button.clicked.connect(self.show_help_dialog)
+        self.main_layout.addWidget(self.help_button, alignment=Qt.AlignLeft)
+
+    def show_help_dialog(self):
+        dialog = QtWidgets.QDialog(self)
+        layout = QtWidgets.QVBoxLayout()
+        label = QtWidgets.QLabel(deeplabcut.transformer_reID.__doc__, self)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(label)
+        layout.addWidget(scroll)
+        dialog.setLayout(layout)
+        dialog.exec_()
 
     def _generate_layout_attributes(self, layout):
         # Shuffle
@@ -104,10 +131,7 @@ class UnsupervizedIdTracking(DefaultTab):
         self.worker.finished.connect(
             lambda: self.run_transformer_button.setEnabled(True)
         )
-        self.worker.finished.connect(
-            lambda: self.root._progress_bar.hide()
-        )
+        self.worker.finished.connect(lambda: self.root._progress_bar.hide())
         self.thread.start()
         self.run_transformer_button.setEnabled(False)
         self.root._progress_bar.show()
-

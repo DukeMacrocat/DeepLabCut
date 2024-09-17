@@ -1,3 +1,13 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 import os
 import logging
 import subprocess
@@ -12,37 +22,47 @@ from deeplabcut import auxiliaryfunctions, VERSION
 from deeplabcut.gui import BASE_DIR, components, utils
 from deeplabcut.gui.tabs import *
 from deeplabcut.gui.widgets import StreamReceiver, StreamWriter
-from PySide2.QtWidgets import QAction, QMenu, QWidget, QMainWindow
-from PySide2 import QtCore
-from PySide2.QtGui import QIcon
-from PySide2 import QtWidgets, QtGui
-from PySide2.QtCore import Qt
+from napari_deeplabcut import misc
+from PySide6.QtWidgets import QMessageBox, QMenu, QWidget, QMainWindow
+from PySide6 import QtCore
+from PySide6.QtGui import QIcon, QAction
+from PySide6 import QtWidgets, QtGui
+from PySide6.QtCore import Qt, QTimer
 
 
-def _check_for_updates():
+def _check_for_updates(silent=True):
     is_latest, latest_version = utils.is_latest_deeplabcut_version()
-    if not is_latest:
+    is_latest_plugin, latest_plugin_version = misc.is_latest_version()
+    if is_latest and is_latest_plugin:
+        if not silent:
+            msg = QtWidgets.QMessageBox(
+                text=f"DeepLabCut is up-to-date",
+            )
+            msg.exec_()
+    else:
+        if not is_latest and is_latest_plugin:
+            text = f"DeepLabCut {latest_version} available"
+            command = "pip", "install", "-U", "deeplabcut"
+        elif not is_latest_plugin and is_latest:
+            text = f"DeepLabCut labeling plugin {latest_plugin_version} available"
+            command = "pip", "install", "-U", "napari-deeplabcut"
+        else:
+            text = f"DeepLabCut {latest_version}\nand labeling plugin {latest_plugin_version} available"
+            command = "pip", "install", "-U", "deeplabcut", "napari-deeplabcut"
+
         msg = QtWidgets.QMessageBox(
-            text=f"DeepLabCut {latest_version} available",
+            text=text,
         )
         msg.setIcon(QtWidgets.QMessageBox.Information)
-        update_btn = msg.addButton('Update', msg.AcceptRole)
+        update_btn = msg.addButton("Update", msg.AcceptRole)
         msg.setDefaultButton(update_btn)
-        _ = msg.addButton('Skip', msg.RejectRole)
+        _ = msg.addButton("Skip", msg.RejectRole)
         msg.exec_()
         if msg.clickedButton() is update_btn:
-            subprocess.check_call(
-                [sys.executable, '-m', 'pip', 'install', '-U', 'deeplabcut']
-            )
-    else:
-        msg = QtWidgets.QMessageBox(
-            text=f"DeepLabCut is up-to-date",
-        )
-        msg.exec_()
+            subprocess.check_call([sys.executable, "-m", *command])
 
 
 class MainWindow(QMainWindow):
-
     config_loaded = QtCore.Signal()
     video_type_ = QtCore.Signal(str)
     video_files_ = QtCore.Signal(set)
@@ -50,9 +70,9 @@ class MainWindow(QMainWindow):
     def __init__(self, app):
         super(MainWindow, self).__init__()
         self.app = app
-        desktop = QtWidgets.QDesktopWidget().screenGeometry(0)
-        self.screen_width = desktop.width()
-        self.screen_height = desktop.height()
+        screen_size = app.screens()[0].size()
+        self.screen_width = screen_size.width()
+        self.screen_height = screen_size.height()
 
         self.logger = logging.getLogger("GUI")
 
@@ -103,7 +123,7 @@ class MainWindow(QMainWindow):
         return QtCore.QSettings()
 
     def load_settings(self):
-        filenames = self.settings.value("recent_files", [])
+        filenames = self.settings.value("recent_files") or []
         for filename in filenames:
             self.add_recent_filename(filename)
 
@@ -118,7 +138,7 @@ class MainWindow(QMainWindow):
         filenames = [action.text() for action in actions]
         if filename in filenames:
             return
-        action = QtWidgets.QAction(filename, self)
+        action = QAction(filename, self)
         before_action = actions[0] if actions else None
         self.recentfiles_menu.insertAction(before_action, action)
 
@@ -213,10 +233,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("DeepLabCut")
 
         palette = QtGui.QPalette()
-        palette.setColor(QtGui.QPalette.Background, QtGui.QColor("#ffffff"))
+        palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#ffffff"))
         self.setPalette(palette)
 
-        icon = os.path.join(BASE_DIR, 'assets', 'logo.png')
+        icon = os.path.join(BASE_DIR, "assets", "logo.png")
         self.setWindowIcon(QIcon(icon))
 
         self.status_bar = self.statusBar()
@@ -246,7 +266,7 @@ class MainWindow(QMainWindow):
         )
         self.layout.addWidget(image_widget)
 
-        description = "DeepLabCut™ is an open source tool for markerless pose estimation of user-defined body parts with deep learning.\nA.  and M.W.  Mathis Labs | http://www.deeplabcut.org\n\n To get started,  create a new project or load an existing one."
+        description = "DeepLabCut™ is an open source tool for markerless pose estimation of user-defined body parts with deep learning.\nA.  and M.W.  Mathis Labs | http://www.deeplabcut.org\n\n To get started,  create a new project, load an existing one, or try one of our pretrained models from the Model Zoo."
         label = components._create_label_widget(
             description,
             "font-size:12px; text-align: center;",
@@ -267,14 +287,21 @@ class MainWindow(QMainWindow):
         self.load_project_button.setFixedWidth(200)
         self.load_project_button.clicked.connect(self._open_project)
 
+        self.run_superanimal_button = QtWidgets.QPushButton("Model Zoo")
+        self.run_superanimal_button.setFixedWidth(200)
+        self.run_superanimal_button.clicked.connect(self._goto_superanimal)
+
         self.layout_buttons.addWidget(self.create_project_button)
         self.layout_buttons.addWidget(self.load_project_button)
+        self.layout_buttons.addWidget(self.run_superanimal_button)
 
         self.layout.addLayout(self.layout_buttons)
 
         widget = QWidget()
         widget.setLayout(self.layout)
         self.setCentralWidget(widget)
+
+        QTimer.singleShot(1000, lambda: _check_for_updates(silent=True))
 
     def default_set(self):
         self.name_default = ""
@@ -291,6 +318,7 @@ class MainWindow(QMainWindow):
             QIcon(os.path.join(BASE_DIR, "assets", "icons", names[0]))
         )
         self.newAction.setShortcut("Ctrl+N")
+        self.newAction.setStatusTip("Create a new project...")
 
         self.newAction.triggered.connect(self._create_project)
 
@@ -300,6 +328,7 @@ class MainWindow(QMainWindow):
             QIcon(os.path.join(BASE_DIR, "assets", "icons", names[1]))
         )
         self.openAction.setShortcut("Ctrl+O")
+        self.openAction.setStatusTip("Open a project...")
         self.openAction.triggered.connect(self._open_project)
 
         self.saveAction = QAction("&Save", self)
@@ -314,10 +343,14 @@ class MainWindow(QMainWindow):
         self.helpAction.setIcon(
             QIcon(os.path.join(BASE_DIR, "assets", "icons", names[2]))
         )
+        self.helpAction.setStatusTip("Ask for help...")
+        self.helpAction.triggered.connect(self._ask_for_help)
 
         self.aboutAction = QAction("&Learn DLC", self)
+        self.aboutAction.triggered.connect(self._learn_dlc)
+
         self.check_updates = QAction("&Check for Updates...", self)
-        self.check_updates.triggered.connect(_check_for_updates)
+        self.check_updates.triggered.connect(lambda: _check_for_updates(silent=False))
 
     def create_menu_bar(self):
         menu_bar = self.menuBar()
@@ -372,6 +405,22 @@ class MainWindow(QMainWindow):
             self.add_recent_filename(self.config)
             self.add_tabs()
 
+    def _ask_for_help(self):
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Ask for help")
+        dlg.setText(
+            """Ask our community for help on <a href='https://forum.image.sc/tag/deeplabcut'>the forum</a>!"""
+        )
+        _ = dlg.exec()
+
+    def _learn_dlc(self):
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Learn DLC")
+        dlg.setText(
+            """Learn DLC with <a href='https://deeplabcut.github.io/DeepLabCut/docs/UseOverviewGuide.html'>our docs and how-to guides</a>!"""
+        )
+        _ = dlg.exec()
+
     def _create_project(self):
         dlg = ProjectCreator(self)
         dlg.show()
@@ -381,12 +430,21 @@ class MainWindow(QMainWindow):
         open_project.load_config()
         if not open_project.config:
             return
-        open_project.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        if open_project.exec_() == QtWidgets.QDialog.Accepted:
-            self._update_project_state(
-                open_project.config,
-                open_project.loaded,
-            )
+
+        open_project.loaded = True
+        self._update_project_state(
+            open_project.config,
+            open_project.loaded,
+        )
+
+    def _goto_superanimal(self):
+        self.tab_widget = QtWidgets.QTabWidget()
+        self.tab_widget.setContentsMargins(0, 20, 0, 0)
+        self.modelzoo = ModelZoo(
+            root=self, parent=None, h1_description="DeepLabCut - Model Zoo"
+        )
+        self.tab_widget.addTab(self.modelzoo, "Model Zoo")
+        self.setCentralWidget(self.tab_widget)
 
     def load_config(self, config):
         self.config = config
@@ -461,6 +519,9 @@ class MainWindow(QMainWindow):
         self.refine_tracklets = RefineTracklets(
             root=self, parent=None, h1_description="DeepLabCut - Refine labels"
         )
+        self.modelzoo = ModelZoo(
+            root=self, parent=None, h1_description="DeepLabCut - Model Zoo"
+        )
         self.video_editor = VideoEditor(
             root=self, parent=None, h1_description="DeepLabCut - Optional Video Editor"
         )
@@ -480,6 +541,7 @@ class MainWindow(QMainWindow):
             self.extract_outlier_frames, "Extract outlier frames (*)"
         )
         self.tab_widget.addTab(self.refine_tracklets, "Refine tracklets (*)")
+        self.tab_widget.addTab(self.modelzoo, "Model Zoo")
         self.tab_widget.addTab(self.video_editor, "Video editor (*)")
 
         if not self.is_multianimal:
@@ -518,6 +580,7 @@ class MainWindow(QMainWindow):
         if self.is_multianimal:
             try:
                 from deeplabcut.pose_tracking_pytorch import transformer_reID
+
                 return True
             except ModuleNotFoundError:
                 return False
@@ -525,10 +588,11 @@ class MainWindow(QMainWindow):
             return False
 
     def closeEvent(self, event):
-        print('Exiting...')
+        print("Exiting...")
         answer = QtWidgets.QMessageBox.question(
-            self, 'Quit',
-            'Are you sure you want to quit?',
+            self,
+            "Quit",
+            "Are you sure you want to quit?",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel,
             QtWidgets.QMessageBox.Cancel,
         )
@@ -538,4 +602,4 @@ class MainWindow(QMainWindow):
             self.save_settings()
         else:
             event.ignore()
-            print('')
+            print("")

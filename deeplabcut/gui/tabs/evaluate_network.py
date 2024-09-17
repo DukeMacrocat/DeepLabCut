@@ -1,11 +1,21 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 import os
 import matplotlib.image as mpimg
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
 )
 from matplotlib.figure import Figure
-from PySide2 import QtWidgets
-from PySide2.QtCore import Qt
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt
 
 import deeplabcut
 from deeplabcut.utils.auxiliaryfunctions import get_evaluation_folder
@@ -47,7 +57,6 @@ class EvaluateNetwork(DefaultTab):
         self._set_page()
 
     def _set_page(self):
-
         self.main_layout.addWidget(_create_label_widget("Attributes", "font:bold"))
         self.layout_attributes = _create_horizontal_layout()
         self._generate_layout_attributes(self.layout_attributes)
@@ -78,6 +87,23 @@ class EvaluateNetwork(DefaultTab):
         self.main_layout.addWidget(self.ev_nw_button, alignment=Qt.AlignRight)
         self.main_layout.addWidget(self.opt_button, alignment=Qt.AlignRight)
 
+        self.help_button = QtWidgets.QPushButton("Help")
+        self.help_button.clicked.connect(self.show_help_dialog)
+        self.main_layout.addWidget(self.help_button, alignment=Qt.AlignLeft)
+
+    def show_help_dialog(self):
+        dialog = QtWidgets.QDialog(self)
+        layout = QtWidgets.QVBoxLayout()
+        label = QtWidgets.QLabel(deeplabcut.evaluate_network.__doc__, self)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(label)
+        layout.addWidget(scroll)
+        dialog.setLayout(layout)
+        dialog.exec_()
+
     def _generate_layout_attributes(self, layout):
         opt_text = QtWidgets.QLabel("Shuffle")
         self.shuffle = ShuffleSpinBox(root=self.root, parent=self)
@@ -97,21 +123,22 @@ class EvaluateNetwork(DefaultTab):
         # Display all images
         dest_folder = os.path.join(
             self.root.project_folder,
-            str(get_evaluation_folder(
-                self.root.cfg["TrainingFraction"][0], shuffle, self.root.cfg
-            )),
+            str(
+                get_evaluation_folder(
+                    self.root.cfg["TrainingFraction"][0], shuffle, self.root.cfg
+                )
+            ),
             "maps",
         )
         image_paths = [
             os.path.join(dest_folder, file)
             for file in os.listdir(dest_folder)
-            if file.endswith('.png')
+            if file.endswith(".png")
         ]
         canvas = GridCanvas(image_paths, parent=self)
         canvas.show()
 
     def _generate_additional_attributes(self, layout):
-
         tmp_layout = _create_horizontal_layout(margins=(0, 0, 0, 0))
 
         self.plot_predictions = QtWidgets.QCheckBox(
@@ -156,7 +183,6 @@ class EvaluateNetwork(DefaultTab):
             )
 
     def evaluate_network(self):
-
         config = self.root.config
 
         Shuffles = [self.root.shuffle_value]

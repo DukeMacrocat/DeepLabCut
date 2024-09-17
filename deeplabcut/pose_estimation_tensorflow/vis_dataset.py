@@ -1,12 +1,24 @@
-"""
-Adapted from DeeperCut by Eldar Insafutdinov
-https://github.com/eldar/pose-tensorflow
-"""
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Adapted from DeeperCut by Eldar Insafutdinov
+# https://github.com/eldar/pose-tensorflow
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
+
 
 import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
+
 
 from deeplabcut.pose_estimation_tensorflow.config import load_config
 from deeplabcut.pose_estimation_tensorflow.datasets import (
@@ -55,7 +67,9 @@ def display_dataset():
                     continue
 
                 scmap_part = scmap[:, :, j]
-                scmap_part = imresize(scmap_part, 8.0, interp="nearest")
+                scmap_part = imresize(
+                    scmap_part, 8.0, interpolationmethod=cv2.INTER_NEAREST
+                )
                 scmap_part = np.lib.pad(scmap_part, ((4, 0), (4, 0)), "minimum")
 
                 curr_plot.set_title("{}".format(j + 1))

@@ -1,12 +1,14 @@
-"""
-DeepLabCut2.0 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
-Please see AUTHORS for contributors.
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-"""
 import math
 import logging
 import os
@@ -16,6 +18,7 @@ import warnings
 from functools import lru_cache
 from pathlib import Path
 from PIL import Image
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -29,6 +32,8 @@ from deeplabcut.utils import (
     auxfun_multianimal,
 )
 from deeplabcut.utils.auxfun_videos import VideoReader
+from deeplabcut.pose_estimation_tensorflow.config import load_config
+from deeplabcut.modelzoo.utils import parse_available_supermodels
 
 
 def comparevideolistsanddatafolders(config):
@@ -243,6 +248,7 @@ def dropimagesduetolackofannotation(config):
             len(imagelist),
         )
 
+
 def dropunlabeledframes(config):
     """
     Drop entries such that all the bodyparts are not labeled from the annotation files, i.e. h5 and csv files
@@ -260,14 +266,14 @@ def dropunlabeledframes(config):
     folders = [Path(config).parent / "labeled-data" / Path(i) for i in video_names]
 
     for folder in folders:
-        h5file =  os.path.join(str(folder), "CollectedData_" + cfg["scorer"] + ".h5")
+        h5file = os.path.join(str(folder), "CollectedData_" + cfg["scorer"] + ".h5")
         try:
             DC = pd.read_hdf(h5file)
         except FileNotFoundError:
-            print("Skipping ",folder,"...")
+            print("Skipping ", folder, "...")
             continue
         before_len = len(DC.index)
-        DC = DC.dropna(how='all') # drop rows where all values are missing(NaN)
+        DC = DC.dropna(how="all")  # drop rows where all values are missing(NaN)
         after_len = len(DC.index)
         dropped = before_len - after_len
         if dropped:
@@ -276,9 +282,10 @@ def dropunlabeledframes(config):
                 os.path.join(str(folder), "CollectedData_" + cfg["scorer"] + ".csv")
             )
 
-            print("Dropped ", dropped, "entries in ",folder)
+            print("Dropped ", dropped, "entries in ", folder)
 
     print("Done.")
+
 
 def check_labels(
     config,
@@ -458,6 +465,50 @@ def _robust_path_split(path):
     return parent, filename, ext
 
 
+def parse_video_filenames(videos: List[str]) -> List[str]:
+    """Parses the names of all videos listed in a project's ``config.yaml`` file
+
+    Goes through the paths all videos listed for a project, and removes entries with a
+    duplicate video name (e.g. if a video is listed twice, once with the path
+    ``/data/video-1.mov`` and once with the path ``/my-dlc-project/videos/video-1.mov``,
+    then ``video-1`` will only be returned once). The order of videos listed is
+    preserved.
+
+    This prevents the same labeled-data to be added multiple times when merging
+    annotated datasets.
+
+    Prints a warning for each filename with duplicate video paths.
+
+    Args:
+        videos: the videos listed in the project's config.yaml file
+
+    Returns:
+        the filenames of videos listed in the project's config.yaml file, with duplicate
+        entries removed
+    """
+    filenames = []
+    filename_to_videos = {}
+    for video in videos:
+        _, filename, _ = _robust_path_split(video)
+        videos_with_filename = filename_to_videos.get(filename, [])
+        if len(videos_with_filename) == 0:
+            filenames.append(filename)
+
+        videos_with_filename.append(video)
+        filename_to_videos[filename] = videos_with_filename
+
+    for filename, videos in filename_to_videos.items():
+        if len(videos) > 1:
+            video_str = "\n  * " + "\n  * ".join(videos)
+            logging.warning(
+                f"Found multiple videos with the same filename (``{filename}``). To "
+                f"avoid issues, please edit your project's `config.yaml` file to have "
+                f"each video added only once.\nDuplicate entries: {video_str}"
+            )
+
+    return filenames
+
+
 def merge_annotateddatasets(cfg, trainingsetfolder_full):
     """
     Merges all the h5 files for all labeled-datasets (from individual videos).
@@ -469,14 +520,19 @@ def merge_annotateddatasets(cfg, trainingsetfolder_full):
     AnnotationData = []
     data_path = Path(os.path.join(cfg["project_path"], "labeled-data"))
     videos = cfg["video_sets"].keys()
-    for video in videos:
-        _, filename, _ = _robust_path_split(video)
+    video_filenames = parse_video_filenames(videos)
+    for filename in video_filenames:
         file_path = os.path.join(
             data_path / filename, f'CollectedData_{cfg["scorer"]}.h5'
         )
         try:
             data = pd.read_hdf(file_path)
             conversioncode.guarantee_multiindex_rows(data)
+            if data.columns.levels[0][0] != cfg["scorer"]:
+                print(
+                    f"{file_path} labeled by a different scorer. This data will not be utilized in training dataset creation. If you need to merge datasets across scorers, see https://github.com/DeepLabCut/DeepLabCut/wiki/Using-labeled-data-in-DeepLabCut-that-was-annotated-elsewhere-(or-merge-across-labelers)"
+                )
+                continue
             AnnotationData.append(data)
         except FileNotFoundError:
             print(file_path, " not found (perhaps not annotated).")
@@ -620,7 +676,7 @@ def mergeandsplit(config, trainindex=0, uniform=True):
     trainingsetfolder = auxiliaryfunctions.get_training_set_folder(
         cfg
     )  # Path concatenation OS platform independent
-    auxiliaryfunctions.attempttomakefolder(
+    auxiliaryfunctions.attempt_to_make_folder(
         Path(os.path.join(project_path, str(trainingsetfolder))), recursive=True
     )
     fn = os.path.join(project_path, trainingsetfolder, "CollectedData_" + cfg["scorer"])
@@ -721,6 +777,7 @@ def create_training_dataset(
     net_type=None,
     augmenter_type=None,
     posecfg_template=None,
+    superanimal_name="",
 ):
     """Creates a training dataset.
 
@@ -771,7 +828,7 @@ def create_training_dataset(
 
     augmenter_type: string, optional, default=None
         Type of augmenter. Currently supported augmenters are
-        
+
         * ``default``
         * ``scalecrop``
         * ``imgaug``
@@ -783,6 +840,10 @@ def create_training_dataset(
         one for the current iteration. Useful if you would like to start with the same
         parameters a previous training iteration. None uses the default
         ``pose_cfg.yaml``.
+
+    superanimal_name: string, optional, default=""
+        Specify the superanimal name is transfer learning with superanimal is desired. This makes sure the pose config template uses superanimal configs as template
+
 
     Returns
     -------
@@ -825,23 +886,43 @@ def create_training_dataset(
 
     # Loading metadata from config file:
     cfg = auxiliaryfunctions.read_config(config)
+    dlc_root_path = auxiliaryfunctions.get_deeplabcut_path()
+
+    if superanimal_name != "":
+        supermodels = parse_available_supermodels()
+        posecfg_template = os.path.join(
+            dlc_root_path,
+            "pose_estimation_tensorflow",
+            "superanimal_configs",
+            supermodels[superanimal_name],
+        )
+
     if posecfg_template:
-        if not posecfg_template.endswith("pose_cfg.yaml"):
+        if (
+            not posecfg_template.endswith("pose_cfg.yaml")
+            and not posecfg_template.endswith("superquadruped.yaml")
+            and not posecfg_template.endswith("supertopview.yaml")
+        ):
             raise ValueError(
                 "posecfg_template argument must contain path to a pose_cfg.yaml file"
             )
         else:
-            print("Reloading pose_cfg parameters from " + posecfg_template +'\n')
+            print("Reloading pose_cfg parameters from " + posecfg_template + "\n")
             from deeplabcut.utils.auxiliaryfunctions import read_plainconfig
 
-            prior_cfg = read_plainconfig(posecfg_template)
+        prior_cfg = read_plainconfig(posecfg_template)
     if cfg.get("multianimalproject", False):
         from deeplabcut.generate_training_dataset.multiple_individuals_trainingsetmanipulation import (
             create_multianimaltraining_dataset,
         )
 
         create_multianimaltraining_dataset(
-            config, num_shuffles, Shuffles, net_type=net_type
+            config,
+            num_shuffles,
+            Shuffles,
+            net_type=net_type,
+            trainIndices=trainIndices,
+            testIndices=testIndices,
         )
     else:
         scorer = cfg["scorer"]
@@ -850,7 +931,7 @@ def create_training_dataset(
         trainingsetfolder = auxiliaryfunctions.get_training_set_folder(
             cfg
         )  # Path concatenation OS platform independent
-        auxiliaryfunctions.attempttomakefolder(
+        auxiliaryfunctions.attempt_to_make_folder(
             Path(os.path.join(project_path, str(trainingsetfolder))), recursive=True
         )
 
@@ -870,6 +951,7 @@ def create_training_dataset(
                 "resnet" in net_type
                 or "mobilenet" in net_type
                 or "efficientnet" in net_type
+                or "dlcrnet" in net_type
             ):
                 pass
             else:
@@ -906,9 +988,7 @@ def create_training_dataset(
             defaultconfigfile = os.path.join(dlcparent_path, "pose_cfg.yaml")
         elif posecfg_template:
             defaultconfigfile = posecfg_template
-        model_path, num_shuffles = auxfun_models.check_for_weights(
-            net_type, Path(dlcparent_path), num_shuffles
-        )
+        model_path = auxfun_models.check_for_weights(net_type, Path(dlcparent_path))
 
         if Shuffles is None:
             Shuffles = range(1, num_shuffles + 1)
@@ -1014,13 +1094,13 @@ def create_training_dataset(
                 modelfoldername = auxiliaryfunctions.get_model_folder(
                     trainFraction, shuffle, cfg
                 )
-                auxiliaryfunctions.attempttomakefolder(
+                auxiliaryfunctions.attempt_to_make_folder(
                     Path(config).parents[0] / modelfoldername, recursive=True
                 )
-                auxiliaryfunctions.attempttomakefolder(
+                auxiliaryfunctions.attempt_to_make_folder(
                     str(Path(config).parents[0] / modelfoldername) + "/train"
                 )
-                auxiliaryfunctions.attempttomakefolder(
+                auxiliaryfunctions.attempt_to_make_folder(
                     str(Path(config).parents[0] / modelfoldername) + "/test"
                 )
 

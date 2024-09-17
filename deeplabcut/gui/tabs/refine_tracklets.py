@@ -1,7 +1,17 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 import os
 from pathlib import Path
-from PySide2 import QtWidgets
-from PySide2.QtCore import Qt
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt
 
 from deeplabcut.gui.widgets import ConfigEditor
 from deeplabcut.gui.components import (
@@ -77,6 +87,23 @@ class RefineTracklets(DefaultTab):
         self.main_layout.addWidget(self.filter_tracks_button, alignment=Qt.AlignRight)
         self.main_layout.addWidget(self.merge_button, alignment=Qt.AlignRight)
 
+        self.help_button = QtWidgets.QPushButton("Help")
+        self.help_button.clicked.connect(self.show_help_dialog)
+        self.main_layout.addWidget(self.help_button, alignment=Qt.AlignLeft)
+
+    def show_help_dialog(self):
+        dialog = QtWidgets.QDialog(self)
+        layout = QtWidgets.QVBoxLayout()
+        label = QtWidgets.QLabel(deeplabcut.stitch_tracklets.__doc__, self)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(label)
+        layout.addWidget(scroll)
+        dialog.setLayout(layout)
+        dialog.exec_()
+
     def _generate_layout_attributes(self, layout):
         # Shuffle
         shuffle_text = QtWidgets.QLabel("Shuffle")
@@ -95,7 +122,6 @@ class RefineTracklets(DefaultTab):
         layout.addWidget(self.num_animals_in_videos)
 
     def _generate_layout_refinement(self, layout):
-
         section_title = _create_label_widget(
             "Refinement Settings", "font:bold", (0, 50, 0, 0)
         )
@@ -130,7 +156,6 @@ class RefineTracklets(DefaultTab):
         layout.addWidget(self.trail_length_widget, 3, 1)
 
     def _generate_layout_filtering(self, layout):
-
         section_title = _create_label_widget("Filtering", "font:bold", (0, 50, 0, 0))
 
         # Filter type
@@ -208,11 +233,11 @@ class RefineTracklets(DefaultTab):
             "Make sure that you have refined all the labels before merging the dataset.If you merge the dataset, you need to re-create the training dataset before you start the training. Are you ready to merge the dataset?"
         )
         msg.setWindowTitle("Warning")
-        msg.setWindowIcon(QtWidgets.QMessageBox.Warning)
         msg.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
         result = msg.exec_()
         if result == QtWidgets.QMessageBox.Yes:
-            deeplabcut.merge_datasets(self.config, forceiterate=None)
+            deeplabcut.merge_datasets(self.root.config, forceiterate=None)
+            self.viz.export_to_training_data()
 
     def refine_tracks(self):
         cfg = self.root.cfg

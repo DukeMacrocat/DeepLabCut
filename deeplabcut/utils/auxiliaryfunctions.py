@@ -1,3 +1,13 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 """
 DeepLabCut2.0 Toolbox (deeplabcut.org)
 © A. & M. Mathis Labs
@@ -10,6 +20,7 @@ Licensed under GNU Lesser General Public License v3.0
 
 import os
 import typing
+from typing import List
 import pickle
 import warnings
 from pathlib import Path
@@ -290,8 +301,8 @@ def write_plainconfig(configname, cfg):
         YAML().dump(cfg, file)
 
 
-def attempttomakefolder(foldername, recursive=False):
-    """ Attempts to create a folder with specified name. Does nothing if it already exists. """
+def attempt_to_make_folder(foldername, recursive=False):
+    """Attempts to create a folder with specified name. Does nothing if it already exists."""
     try:
         os.path.isdir(foldername)
     except TypeError:  # https://www.python.org/dev/peps/pep-0519/
@@ -309,13 +320,13 @@ def attempttomakefolder(foldername, recursive=False):
 
 
 def read_pickle(filename):
-    """ Read the pickle file """
+    """Read the pickle file"""
     with open(filename, "rb") as handle:
         return pickle.load(handle)
 
 
 def write_pickle(filename, data):
-    """ Write the pickle file """
+    """Write the pickle file"""
     with open(filename, "wb") as handle:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -325,7 +336,7 @@ def get_list_of_videos(
     videotype: typing.Union[typing.List[str], str] = "",
     in_random_order: bool = True,
 ) -> typing.List[str]:
-    """ Returns list of videos of videotype "videotype" in
+    """Returns list of videos of videotype "videotype" in
     folder videos or for list of videos.
 
     NOTE: excludes keyword videos of the form:
@@ -361,7 +372,9 @@ def get_list_of_videos(
         if in_random_order:
             from random import shuffle
 
-            shuffle(videos) # this is useful so multiple nets can be used to analyze simultaneously
+            shuffle(
+                videos
+            )  # this is useful so multiple nets can be used to analyze simultaneously
         else:
             videos.sort()
 
@@ -382,7 +395,7 @@ def get_list_of_videos(
 
 
 def save_data(PredicteData, metadata, dataname, pdindex, imagenames, save_as_csv):
-    """ Save predicted data as h5 file and metadata as pickle file; created by predict_videos.py """
+    """Save predicted data as h5 file and metadata as pickle file; created by predict_videos.py"""
     DataMachine = pd.DataFrame(PredicteData, columns=pdindex, index=imagenames)
     if save_as_csv:
         print("Saving csv poses!")
@@ -413,7 +426,7 @@ def load_metadata(metadatafile):
 
 
 def get_immediate_subdirectories(a_dir):
-    """ Get list of immediate subdirectories """
+    """Get list of immediate subdirectories"""
     return [
         name for name in os.listdir(a_dir) if os.path.isdir(os.path.join(a_dir, name))
     ]
@@ -427,7 +440,7 @@ def grab_files_in_folder(folder, ext="", relative=True):
 
 
 def get_video_list(filename, videopath, videtype):
-    """ Get list of videos in a path (if filetype == all), otherwise just a specific file."""
+    """Get list of videos in a path (if filetype == all), otherwise just a specific file."""
     videos = list(grab_files_in_folder(videopath, videtype))
     if filename == "all":
         return videos
@@ -442,7 +455,7 @@ def get_video_list(filename, videopath, videtype):
 
 ## Various functions to get filenames, foldernames etc. based on configuration parameters.
 def get_training_set_folder(cfg):
-    """ Training Set folder for config file based on parameters """
+    """Training Set folder for config file based on parameters"""
     Task = cfg["Task"]
     date = cfg["date"]
     iterate = "iteration-" + str(cfg["iteration"])
@@ -493,6 +506,29 @@ def get_model_folder(trainFraction, shuffle, cfg, modelprefix=""):
     )
 
 
+def get_snapshots_from_folder(train_folder: Path) -> List[str]:
+    """
+    Returns an ordered list of existing snapshot names in the train folder, sorted by
+    increasing training iterations.
+
+    Raises:
+        FileNotFoundError: if no snapshot_names are found in the train_folder.
+    """
+    snapshot_names = [
+        file.stem for file in train_folder.iterdir() if "index" in file.name
+    ]
+
+    if len(snapshot_names) == 0:
+        raise FileNotFoundError(
+            f"No snapshots were found in {train_folder}! Please ensure the network has "
+            f"been trained and verify the iteration, shuffle and trainFraction are "
+            f"correct."
+        )
+
+    # sort in ascending order of iteration number
+    return sorted(snapshot_names, key=lambda name: int(name.split("-")[1]))
+
+
 def get_evaluation_folder(trainFraction, shuffle, cfg, modelprefix=""):
     Task = cfg["Task"]
     date = cfg["date"]
@@ -515,14 +551,14 @@ def get_evaluation_folder(trainFraction, shuffle, cfg, modelprefix=""):
 
 
 def get_deeplabcut_path():
-    """ Get path of where deeplabcut is currently running """
+    """Get path of where deeplabcut is currently running"""
     import importlib.util
 
     return os.path.split(importlib.util.find_spec("deeplabcut").origin)[0]
 
 
 def intersection_of_body_parts_and_ones_given_by_user(cfg, comparisonbodyparts):
-    """ Returns all body parts when comparisonbodyparts=='all', otherwise all bpts that are in the intersection of comparisonbodyparts and the actual bodyparts """
+    """Returns all body parts when comparisonbodyparts=='all', otherwise all bpts that are in the intersection of comparisonbodyparts and the actual bodyparts"""
     # if "MULTI!" in allbpts:
     if cfg["multianimalproject"]:
         allbpts = cfg["multianimalbodyparts"] + cfg["uniquebodyparts"]
@@ -554,8 +590,8 @@ def form_data_containers(df, bodyparts):
 def get_scorer_name(
     cfg, shuffle, trainFraction, trainingsiterations="unknown", modelprefix=""
 ):
-    """ Extract the scorer/network name for a particular shuffle, training fraction, etc.
-        Returns tuple of DLCscorer, DLCscorerlegacy (old naming convention)
+    """Extract the scorer/network name for a particular shuffle, training fraction, etc.
+    Returns tuple of DLCscorer, DLCscorerlegacy (old naming convention)
     """
 
     Task = cfg["Task"]
@@ -571,18 +607,15 @@ def get_scorer_name(
         else:
             snapshotindex = cfg["snapshotindex"]
 
-        modelfolder = os.path.join(
-            cfg["project_path"],
-            str(get_model_folder(trainFraction, shuffle, cfg, modelprefix=modelprefix)),
-            "train",
+        train_folder = (
+            Path(cfg["project_path"])
+            / get_model_folder(trainFraction, shuffle, cfg, modelprefix=modelprefix)
+            / "train"
         )
-        Snapshots = np.array(
-            [fn.split(".")[0] for fn in os.listdir(modelfolder) if "index" in fn]
-        )
-        increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
-        Snapshots = Snapshots[increasing_indices]
-        SNP = Snapshots[snapshotindex]
-        trainingsiterations = (SNP.split(os.sep)[-1]).split("-")[-1]
+        snapshot_names = get_snapshots_from_folder(train_folder)
+
+        snapshot_name = snapshot_names[snapshotindex]
+        trainingsiterations = (snapshot_name.split(os.sep)[-1]).split("-")[-1]
 
     dlc_cfg = read_plainconfig(
         os.path.join(
@@ -620,9 +653,11 @@ def get_scorer_name(
     return scorer, scorer_legacy
 
 
-def check_if_post_processing(folder, vname, DLCscorer, DLCscorerlegacy, suffix="filtered"):
-    """ Checks if filtered/bone lengths were already calculated. If not, figures
-    out if data was already analyzed (either with legacy scorer name or new one!) """
+def check_if_post_processing(
+    folder, vname, DLCscorer, DLCscorerlegacy, suffix="filtered"
+):
+    """Checks if filtered/bone lengths were already calculated. If not, figures
+    out if data was already analyzed (either with legacy scorer name or new one!)"""
     outdataname = os.path.join(folder, vname + DLCscorer + suffix + ".h5")
     sourcedataname = os.path.join(folder, vname + DLCscorer + ".h5")
     if os.path.isfile(outdataname):  # was data already processed?
@@ -695,7 +730,7 @@ def check_if_not_evaluated(folder, DLCscorer, DLCscorerlegacy, snapshot):
 
 
 def find_video_metadata(folder, videoname, scorer):
-    """ For backward compatibility, let us search the substring 'meta' """
+    """For backward compatibility, let us search the substring 'meta'"""
     scorer_legacy = scorer.replace("DLC", "DeepCut")
     meta = [
         file
@@ -727,9 +762,8 @@ def find_analyzed_data(folder, videoname, scorer, filtered=False, track_method="
     candidates = []
     for file in grab_files_in_folder(folder, "h5"):
         stem = Path(file).stem.replace("_filtered", "")
-        starts_by_scorer = (
-            file.startswith(videoname + scorer)
-            or file.startswith(videoname + scorer_legacy)
+        starts_by_scorer = file.startswith(videoname + scorer) or file.startswith(
+            videoname + scorer_legacy
         )
         if tracker:
             matches_tracker = stem.endswith(tracker)
@@ -820,6 +854,7 @@ def find_next_unlabeled_folder(config_path, verbose=False):
                 print(f"{folder.name} | {int(100 * frac)} %")
     return next_folder
 
+
 # aliases for backwards-compatibility.
 SaveData = save_data
 SaveMetadata = save_metadata
@@ -827,7 +862,9 @@ LoadMetadata = load_metadata
 GetVideoList = get_video_list
 GetTrainingSetFolder = get_training_set_folder
 GetDataandMetaDataFilenames = get_data_and_metadata_filenames
-IntersectionofBodyPartsandOnesGivenbyUser = intersection_of_body_parts_and_ones_given_by_user
+IntersectionofBodyPartsandOnesGivenbyUser = (
+    intersection_of_body_parts_and_ones_given_by_user
+)
 GetScorerName = get_scorer_name
 CheckifPostProcessing = check_if_post_processing
 CheckifNotAnalyzed = check_if_not_analyzed

@@ -1,8 +1,18 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 import os
 
-from PySide2 import QtWidgets, QtCore
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import QCheckBox
+from PySide6 import QtWidgets, QtCore
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QCheckBox
 
 
 class OpenProject(QtWidgets.QDialog):
@@ -26,8 +36,8 @@ class OpenProject(QtWidgets.QDialog):
 
     def layout_open(self):
         self.open_frame = QtWidgets.QFrame(self)
-        self.open_frame.setFrameShape(self.open_frame.StyledPanel)
-        self.open_frame.setLineWidth(0.5)
+        self.open_frame.setFrameShape(self.open_frame.Shape.StyledPanel)
+        self.open_frame.setLineWidth(0)
         self.open_frame.setMinimumWidth(600)
 
         open_label = QtWidgets.QLabel("Select the config file:", self.open_frame)

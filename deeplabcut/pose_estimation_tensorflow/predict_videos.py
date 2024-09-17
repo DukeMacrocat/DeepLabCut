@@ -1,12 +1,14 @@
-"""
-DeepLabCut2.0 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
-Please see AUTHORS for contributors.
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-"""
 
 ####################################################
 # Dependencies
@@ -34,7 +36,7 @@ from deeplabcut.pose_estimation_tensorflow.core import predict
 from deeplabcut.pose_estimation_tensorflow.lib import inferenceutils, trackingutils
 
 from deeplabcut.refine_training_dataset.stitch import stitch_tracklets
-from deeplabcut.utils import auxiliaryfunctions, auxfun_multianimal
+from deeplabcut.utils import auxiliaryfunctions, auxfun_multianimal, auxfun_models
 from deeplabcut.pose_estimation_tensorflow.core.openvino.session import (
     GetPoseF_OV,
     is_openvino_available,
@@ -82,7 +84,7 @@ def create_tracking_dataset(
         del os.environ["TF_CUDNN_USE_AUTOTUNE"]  # was potentially set during training
 
     if gputouse is not None:  # gpu selection
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gputouse)
+        auxfun_models.set_visible_devices(gputouse)
 
     tf.compat.v1.reset_default_graph()
     start_path = os.getcwd()  # record cwd to return to this directory in the end
@@ -113,20 +115,9 @@ def create_tracking_dataset(
             % (shuffle, trainFraction)
         )
 
-    # Check which snapshots are available and sort them by # iterations
-    try:
-        Snapshots = np.array(
-            [
-                fn.split(".")[0]
-                for fn in os.listdir(os.path.join(modelfolder, "train"))
-                if "index" in fn
-            ]
-        )
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Snapshots not found! It seems the dataset for shuffle %s has not been trained/does not exist.\n Please train it before using it to analyze videos.\n Use the function 'train_network' to train the network for shuffle %s."
-            % (shuffle, shuffle)
-        )
+    Snapshots = auxiliaryfunctions.get_snapshots_from_folder(
+        train_folder=Path(modelfolder) / "train",
+    )
 
     if cfg["snapshotindex"] == "all":
         print(
@@ -135,9 +126,6 @@ def create_tracking_dataset(
         snapshotindex = -1
     else:
         snapshotindex = cfg["snapshotindex"]
-
-    increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
-    Snapshots = Snapshots[increasing_indices]
 
     print("Using %s" % Snapshots[snapshotindex], "for model", modelfolder)
 
@@ -235,7 +223,11 @@ def create_tracking_dataset(
             sess.close()
             tf.keras.backend.clear_session()
             create_triplets_dataset(
-                Videos, DLCscorer, track_method, n_triplets=n_triplets, destfolder=destfolder,
+                Videos,
+                DLCscorer,
+                track_method,
+                n_triplets=n_triplets,
+                destfolder=destfolder,
             )
 
         else:
@@ -287,6 +279,14 @@ def analyze_videos(
 
     The index of the trained network is specified by parameters in the config file
     (in particular the variable 'snapshotindex').
+
+    The labels are stored as MultiIndex Pandas Array, which contains the name of
+    the network, body part name, (x, y) label position in pixels, and the
+    likelihood for each frame per body part. These arrays are stored in an
+    efficient Hierarchical Data Format (HDF) in the same directory where the video
+    is stored. However, if the flag save_as_csv is set to True, the data can also
+    be exported in comma-separated values format (.csv), which in turn can be
+    imported in many programs, such as MATLAB, R, Prism, etc.
 
     Parameters
     ----------
@@ -402,14 +402,8 @@ def analyze_videos(
 
     Returns
     -------
-    pandas array
-        The labels are stored as MultiIndex Pandas Array, which contains the name of
-        the network, body part name, (x, y) label position in pixels, and the
-        likelihood for each frame per body part. These arrays are stored in an
-        efficient Hierarchical Data Format (HDF) in the same directory, where the video
-        is stored. However, if the flag save_as_csv is set to True, the data can also
-        be exported in comma-separated values format (.csv), which in turn can be
-        imported in many programs, such as MATLAB, R, Prism, etc.
+    DLCScorer: str
+        the scorer used to analyze the videos
 
     Examples
     --------
@@ -473,7 +467,7 @@ def analyze_videos(
         del os.environ["TF_CUDNN_USE_AUTOTUNE"]  # was potentially set during training
 
     if gputouse is not None:  # gpu selection
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gputouse)
+        auxfun_models.set_visible_devices(gputouse)
 
     tf.compat.v1.reset_default_graph()
     start_path = os.getcwd()  # record cwd to return to this directory in the end
@@ -505,20 +499,9 @@ def analyze_videos(
             % (iteration, shuffle, trainFraction)
         )
 
-    # Check which snapshots are available and sort them by # iterations
-    try:
-        Snapshots = np.array(
-            [
-                fn.split(".")[0]
-                for fn in os.listdir(os.path.join(modelfolder, "train"))
-                if "index" in fn
-            ]
-        )
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Snapshots not found! It seems the dataset for shuffle %s has not been trained/does not exist.\n Be sure you also have the intended iteration number set.\n Please train it before using it to analyze videos.\n Use the function 'train_network' to train the network for shuffle %s."
-            % (shuffle, shuffle)
-        )
+    Snapshots = auxiliaryfunctions.get_snapshots_from_folder(
+        train_folder=Path(modelfolder) / "train",
+    )
 
     if cfg["snapshotindex"] == "all":
         print(
@@ -527,9 +510,6 @@ def analyze_videos(
         snapshotindex = -1
     else:
         snapshotindex = cfg["snapshotindex"]
-
-    increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
-    Snapshots = Snapshots[increasing_indices]
 
     print("Using %s" % Snapshots[snapshotindex], "for model", modelfolder)
 
@@ -724,7 +704,9 @@ def GetPoseF(cfg, dlc_cfg, sess, inputs, outputs, cap, nframes, batchsize):
     )
     batch_ind = 0  # keeps track of which image within a batch should be written to
     batch_num = 0  # keeps track of which batch you are at
-    ny, nx = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    ny, nx = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(
+        cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    )
     if cfg["cropping"]:
         ny, nx = checkcropping(cfg, cap)
 
@@ -794,9 +776,7 @@ def GetPoseS(cfg, dlc_cfg, sess, inputs, outputs, cap, nframes):
             else:
                 frame = img_as_ubyte(frame)
             pose = predict.getpose(frame, dlc_cfg, sess, inputs, outputs)
-            PredictedData[
-                counter, :
-            ] = (
+            PredictedData[counter, :] = (
                 pose.flatten()
             )  # NOTE: thereby cfg['all_joints_names'] should be same order as bodyparts!
         elif counter >= nframes:
@@ -839,9 +819,7 @@ def GetPoseS_GTF(cfg, dlc_cfg, sess, inputs, outputs, cap, nframes):
             )
             pose[:, [0, 1, 2]] = pose[:, [1, 0, 2]]
             # pose = predict.getpose(frame, dlc_cfg, sess, inputs, outputs)
-            PredictedData[
-                counter, :
-            ] = (
+            PredictedData[counter, :] = (
                 pose.flatten()
             )  # NOTE: thereby cfg['all_joints_names'] should be same order as bodyparts!
         elif counter >= nframes:
@@ -857,57 +835,47 @@ def GetPoseF_GTF(cfg, dlc_cfg, sess, inputs, outputs, cap, nframes, batchsize):
     PredictedData = np.zeros((nframes, 3 * len(dlc_cfg["all_joints_names"])))
     batch_ind = 0  # keeps track of which image within a batch should be written to
     batch_num = 0  # keeps track of which batch you are at
-    ny, nx = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    ny = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    nx = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     if cfg["cropping"]:
         ny, nx = checkcropping(cfg, cap)
 
-    pose_tensor = predict.extract_GPUprediction(
-        outputs, dlc_cfg
-    )  # extract_output_tensor(outputs, dlc_cfg)
-    frames = np.empty(
-        (batchsize, ny, nx, 3), dtype="ubyte"
-    )  # this keeps all frames in a batch
+    # Flip x, y, confidence and reshape
+    pose_tensor = predict.extract_GPUprediction(outputs, dlc_cfg)
+    pose_tensor = tf.gather(pose_tensor, [1, 0, 2], axis=1)
+    pose_tensor = tf.reshape(pose_tensor, (batchsize, -1))
+
+    frames = np.empty((batchsize, ny, nx, 3), dtype="ubyte")
     pbar = tqdm(total=nframes)
-    counter = 0
-    step = max(10, int(nframes / 100))
+    counter = -1
     inds = []
-    while cap.isOpened():
-        if counter != 0 and counter % step == 0:
-            pbar.update(step)
+    while cap.isOpened() and counter < nframes - 1:
         ret, frame = cap.read()
-        if ret:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            if cfg["cropping"]:
-                frames[batch_ind] = img_as_ubyte(
-                    frame[cfg["y1"] : cfg["y2"], cfg["x1"] : cfg["x2"]]
-                )
-            else:
-                frames[batch_ind] = img_as_ubyte(frame)
-            inds.append(counter)
-            if batch_ind == batchsize - 1:
-                # pose = predict.getposeNP(frames,dlc_cfg, sess, inputs, outputs)
-                pose = sess.run(pose_tensor, feed_dict={inputs: frames})
-                pose[:, [0, 1, 2]] = pose[
-                    :, [1, 0, 2]
-                ]  # change order to have x,y,confidence
-                pose = np.reshape(
-                    pose, (batchsize, -1)
-                )  # bring into batchsize times x,y,conf etc.
-                PredictedData[inds] = pose
-                batch_ind = 0
-                inds.clear()
-                batch_num += 1
-            else:
-                batch_ind += 1
-        elif counter >= nframes:
-            if batch_ind > 0:
-                # pose = predict.getposeNP(frames, dlc_cfg, sess, inputs, outputs) #process the whole batch (some frames might be from previous batch!)
-                pose = sess.run(pose_tensor, feed_dict={inputs: frames})
-                pose[:, [0, 1, 2]] = pose[:, [1, 0, 2]]
-                pose = np.reshape(pose, (batchsize, -1))
-                PredictedData[inds[:batch_ind]] = pose[:batch_ind]
-            break
         counter += 1
+        if not ret:
+            warnings.warn(f"Could not decode frame #{counter}.")
+            continue
+
+        if cfg["cropping"]:
+            frame = img_as_ubyte(frame[cfg["y1"] : cfg["y2"], cfg["x1"] : cfg["x2"]])
+        else:
+            frame = img_as_ubyte(frame)
+        frames[batch_ind] = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        inds.append(counter)
+        if batch_ind == batchsize - 1:
+            pose = sess.run(pose_tensor, feed_dict={inputs: frames})
+            PredictedData[inds] = pose
+            batch_ind = 0
+            batch_num += 1
+            inds.clear()
+            pbar.update(batchsize)
+        else:
+            batch_ind += 1
+
+    if batch_ind > 0:
+        pose = sess.run(pose_tensor, feed_dict={inputs: frames})
+        PredictedData[inds[:batch_ind]] = pose[:batch_ind]
+        pbar.update(batch_ind)
 
     pbar.close()
     return PredictedData, nframes
@@ -928,7 +896,9 @@ def GetPoseDynamic(
     if cfg["cropping"]:
         ny, nx = checkcropping(cfg, cap)
     else:
-        ny, nx = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        ny, nx = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(
+            cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        )
     x1, x2, y1, y2 = 0, nx, 0, ny
     detected = False
     # TODO: perform detection on resized image (For speed)
@@ -1014,7 +984,7 @@ def AnalyzeVideo(
 
     if destfolder is None:
         destfolder = str(Path(video).parents[0])
-    auxiliaryfunctions.attempttomakefolder(destfolder)
+    auxiliaryfunctions.attempt_to_make_folder(destfolder)
     vname = Path(video).stem
     try:
         _ = auxiliaryfunctions.load_analyzed_data(destfolder, vname, DLCscorer)
@@ -1029,7 +999,10 @@ def AnalyzeVideo(
         fps = cap.get(cv2.CAP_PROP_FPS)
         nframes = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = nframes * 1.0 / fps
-        size = (int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))
+        size = (
+            int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        )
         ny, nx = size
         print(
             "Duration of video [s]: ",
@@ -1109,7 +1082,7 @@ def AnalyzeVideo(
             "iteration (active-learning)": cfg["iteration"],
             "training set fraction": trainFraction,
             "cropping": cfg["cropping"],
-            "cropping_parameters": coords
+            "cropping_parameters": coords,
             # "gpu_info": device_lib.list_local_devices()
         }
         metadata = {"data": dictionary}
@@ -1287,7 +1260,7 @@ def analyze_time_lapse_frames(
         del os.environ["TF_CUDNN_USE_AUTOTUNE"]  # was potentially set during training
 
     if gputouse is not None:  # gpu selection
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gputouse)
+        auxfun_models.set_visible_devices(gputouse)
 
     tf.compat.v1.reset_default_graph()
     start_path = os.getcwd()  # record cwd to return to this directory in the end
@@ -1310,20 +1283,10 @@ def analyze_time_lapse_frames(
             "It seems the model for shuffle %s and trainFraction %s does not exist."
             % (shuffle, trainFraction)
         )
-    # Check which snapshots are available and sort them by # iterations
-    try:
-        Snapshots = np.array(
-            [
-                fn.split(".")[0]
-                for fn in os.listdir(os.path.join(modelfolder, "train"))
-                if "index" in fn
-            ]
-        )
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Snapshots not found! It seems the dataset for shuffle %s has not been trained/does not exist.\n Please train it before using it to analyze videos.\n Use the function 'train_network' to train the network for shuffle %s."
-            % (shuffle, shuffle)
-        )
+
+    Snapshots = auxiliaryfunctions.get_snapshots_from_folder(
+        train_folder=Path(modelfolder) / "train",
+    )
 
     if cfg["snapshotindex"] == "all":
         print(
@@ -1332,9 +1295,6 @@ def analyze_time_lapse_frames(
         snapshotindex = -1
     else:
         snapshotindex = cfg["snapshotindex"]
-
-    increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
-    Snapshots = Snapshots[increasing_indices]
 
     print("Using %s" % Snapshots[snapshotindex], "for model", modelfolder)
 
@@ -1375,7 +1335,7 @@ def analyze_time_lapse_frames(
     )
 
     if gputouse is not None:  # gpu selectinon
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gputouse)
+        auxfun_models.set_visible_devices(gputouse)
 
     ##################################################
     # Loading the images
@@ -1453,7 +1413,13 @@ def analyze_time_lapse_frames(
 
 
 def _convert_detections_to_tracklets(
-    cfg, inference_cfg, data, metadata, output_path, greedy=False, calibrate=False,
+    cfg,
+    inference_cfg,
+    data,
+    metadata,
+    output_path,
+    greedy=False,
+    calibrate=False,
 ):
     track_method = cfg.get("default_track_method", "ellipse")
     if track_method not in trackingutils.TRACK_METHODS:
@@ -1486,7 +1452,7 @@ def _convert_detections_to_tracklets(
         )
     tracklets = {}
 
-    ass = inferenceutils.Assembler(
+    assembly_builder = inferenceutils.Assembler(
         data,
         max_n_individuals=inference_cfg["topktoretain"],
         n_multibodyparts=len(cfg["multianimalbodyparts"]),
@@ -1495,6 +1461,7 @@ def _convert_detections_to_tracklets(
         greedy=greedy,
         pcutoff=inference_cfg.get("pcutoff", 0.1),
         min_affinity=inference_cfg.get("pafthreshold", 0.05),
+        min_n_links=inference_cfg["minimalnumberofconnections"]
     )
     if calibrate:
         trainingsetfolder = auxiliaryfunctions.get_training_set_folder(cfg)
@@ -1503,22 +1470,24 @@ def _convert_detections_to_tracklets(
             str(trainingsetfolder),
             "CollectedData_" + cfg["scorer"] + ".h5",
         )
-        ass.calibrate(train_data_file)
-    ass.assemble()
+        assembly_builder.calibrate(train_data_file)
+    assembly_builder.assemble()
 
     output_path, _ = os.path.splitext(output_path)
     output_path += ".pickle"
-    ass.to_pickle(output_path.replace(".pickle", "_assemblies.pickle"))
+    assembly_builder.to_pickle(output_path.replace(".pickle", "_assemblies.pickle"))
 
     if cfg["uniquebodyparts"]:
         tracklets["single"] = {}
-        tracklets["single"].update(ass.unique)
+        tracklets["single"].update(assembly_builder.unique)
 
-    for i, imname in tqdm(enumerate(ass.metadata["imnames"])):
-        assemblies = ass.assemblies.get(i)
+    for i, imname in tqdm(enumerate(assembly_builder.metadata["imnames"])):
+        assemblies = assembly_builder.assemblies.get(i)
         if assemblies is None:
             continue
-        animals = np.stack([ass.data[:, :3] for ass in assemblies])
+        animals = np.stack(
+            [assembly_builder.data[:, :3] for assembly_builder in assemblies]
+        )
         if track_method == "box":
             xy = trackingutils.calc_bboxes_from_keypoints(
                 animals, inference_cfg.get("boundingboxslack", 0)
@@ -1679,20 +1648,9 @@ def convert_detections2tracklets(
         # between trackers cannot be evaluated, resulting in empty tracklets.
         inferencecfg["boundingboxslack"] = max(inferencecfg["boundingboxslack"], 40)
 
-    # Check which snapshots are available and sort them by # iterations
-    try:
-        Snapshots = np.array(
-            [
-                fn.split(".")[0]
-                for fn in os.listdir(os.path.join(modelfolder, "train"))
-                if "index" in fn
-            ]
-        )
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Snapshots not found! It seems the dataset for shuffle %s has not been trained/does not exist.\n Please train it before using it to analyze videos.\n Use the function 'train_network' to train the network for shuffle %s."
-            % (shuffle, shuffle)
-        )
+    Snapshots = auxiliaryfunctions.get_snapshots_from_folder(
+        train_folder=Path(modelfolder) / "train",
+    )
 
     if cfg["snapshotindex"] == "all":
         print(
@@ -1702,8 +1660,6 @@ def convert_detections2tracklets(
     else:
         snapshotindex = cfg["snapshotindex"]
 
-    increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
-    Snapshots = Snapshots[increasing_indices]
     print("Using %s" % Snapshots[snapshotindex], "for model", modelfolder)
     dlc_cfg["init_weights"] = os.path.join(
         modelfolder, "train", Snapshots[snapshotindex]
@@ -1729,7 +1685,7 @@ def convert_detections2tracklets(
             videofolder = str(Path(video).parents[0])
             if destfolder is None:
                 destfolder = videofolder
-            auxiliaryfunctions.attempttomakefolder(destfolder)
+            auxiliaryfunctions.attempt_to_make_folder(destfolder)
             vname = Path(video).stem
             dataname = os.path.join(destfolder, vname + DLCscorer + ".h5")
             data, metadata = auxfun_multianimal.LoadFullMultiAnimalData(dataname)
@@ -1789,7 +1745,7 @@ def convert_detections2tracklets(
                     )
                 tracklets = {}
                 multi_bpts = cfg["multianimalbodyparts"]
-                ass = inferenceutils.Assembler(
+                assembly_builder = inferenceutils.Assembler(
                     data,
                     max_n_individuals=inferencecfg["topktoretain"],
                     n_multibodyparts=len(multi_bpts),
@@ -1798,17 +1754,25 @@ def convert_detections2tracklets(
                     min_affinity=inferencecfg.get("pafthreshold", 0.05),
                     window_size=window_size,
                     identity_only=identity_only,
+                    min_n_links=inferencecfg["minimalnumberofconnections"]
                 )
-                if calibrate:
-                    trainingsetfolder = auxiliaryfunctions.get_training_set_folder(cfg)
-                    train_data_file = os.path.join(
-                        cfg["project_path"],
-                        str(trainingsetfolder),
-                        "CollectedData_" + cfg["scorer"] + ".h5",
-                    )
-                    ass.calibrate(train_data_file)
-                ass.assemble()
-                ass.to_pickle(dataname.split(".h5")[0] + "_assemblies.pickle")
+                assemblies_filename = dataname.split(".h5")[0] + "_assemblies.pickle"
+                if not os.path.exists(assemblies_filename) or overwrite:
+                    if calibrate:
+                        trainingsetfolder = auxiliaryfunctions.get_training_set_folder(
+                            cfg
+                        )
+                        train_data_file = os.path.join(
+                            cfg["project_path"],
+                            str(trainingsetfolder),
+                            "CollectedData_" + cfg["scorer"] + ".h5",
+                        )
+                        assembly_builder.calibrate(train_data_file)
+                    assembly_builder.assemble()
+                    assembly_builder.to_pickle(assemblies_filename)
+                else:
+                    assembly_builder.from_pickle(assemblies_filename)
+                    print(f"Loading assemblies from {assemblies_filename}")
                 try:
                     data.close()
                 except AttributeError:
@@ -1820,7 +1784,7 @@ def convert_detections2tracklets(
                     tracklets["single"] = {}
                     _single = {}
                     for index, imname in enumerate(imnames):
-                        single_detection = ass.unique.get(index)
+                        single_detection = assembly_builder.unique.get(index)
                         if single_detection is None:
                             continue
                         imindex = int(re.findall(r"\d+", imname)[0])
@@ -1830,7 +1794,7 @@ def convert_detections2tracklets(
                 if inferencecfg["topktoretain"] == 1:
                     tracklets[0] = {}
                     for index, imname in tqdm(enumerate(imnames)):
-                        assemblies = ass.assemblies.get(index)
+                        assemblies = assembly_builder.assemblies.get(index)
                         if assemblies is None:
                             continue
                         tracklets[0][imname] = assemblies[0].data
@@ -1838,10 +1802,12 @@ def convert_detections2tracklets(
                     keep = set(multi_bpts).difference(ignore_bodyparts or [])
                     keep_inds = sorted(multi_bpts.index(bpt) for bpt in keep)
                     for index, imname in tqdm(enumerate(imnames)):
-                        assemblies = ass.assemblies.get(index)
+                        assemblies = assembly_builder.assemblies.get(index)
                         if assemblies is None:
                             continue
-                        animals = np.stack([ass.data for ass in assemblies])
+                        animals = np.stack(
+                            [assembly_builder.data for assembly_builder in assemblies]
+                        )
                         if not identity_only:
                             if track_method == "box":
                                 xy = trackingutils.calc_bboxes_from_keypoints(

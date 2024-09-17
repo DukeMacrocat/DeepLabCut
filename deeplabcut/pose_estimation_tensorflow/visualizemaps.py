@@ -1,12 +1,14 @@
-"""
-DeepLabCut2.0 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
-Please see AUTHORS for contributors.
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-"""
 
 import os
 import matplotlib.pyplot as plt
@@ -102,7 +104,7 @@ def extract_maps(
     )
 
     # Make folder for evaluation
-    auxiliaryfunctions.attempttomakefolder(
+    auxiliaryfunctions.attempt_to_make_folder(
         str(cfg["project_path"] + "/evaluation-results/")
     )
 
@@ -154,27 +156,11 @@ def extract_maps(
                 )
             ),
         )
-        auxiliaryfunctions.attempttomakefolder(evaluationfolder, recursive=True)
-        # path_train_config = modelfolder / 'train' / 'pose_cfg.yaml'
+        auxiliaryfunctions.attempt_to_make_folder(evaluationfolder, recursive=True)
 
-        # Check which snapshots are available and sort them by # iterations
-        Snapshots = np.array(
-            [
-                fn.split(".")[0]
-                for fn in os.listdir(os.path.join(str(modelfolder), "train"))
-                if "index" in fn
-            ]
+        Snapshots = auxiliaryfunctions.get_snapshots_from_folder(
+            train_folder=Path(modelfolder) / "train",
         )
-        try:  # check if any where found?
-            Snapshots[0]
-        except IndexError:
-            raise FileNotFoundError(
-                "Snapshots not found! It seems the dataset for shuffle %s and trainFraction %s is not trained.\nPlease train it before evaluating.\nUse the function 'train_network' to do so."
-                % (shuffle, trainFraction)
-            )
-
-        increasing_indices = np.argsort([int(m.split("-")[1]) for m in Snapshots])
-        Snapshots = Snapshots[increasing_indices]
 
         if cfg["snapshotindex"] == -1:
             snapindices = [-1]
@@ -337,7 +323,7 @@ def visualize_paf(image, paf, step=5, colors=None):
         V = paf[:, :, n, 1]
         X, Y = np.meshgrid(np.arange(U.shape[1]), np.arange(U.shape[0]))
         M = np.zeros(U.shape, dtype=bool)
-        M[U ** 2 + V ** 2 < 0.5 * 0.5 ** 2] = True
+        M[U**2 + V**2 < 0.5 * 0.5**2] = True
         U = np.ma.masked_array(U, mask=M)
         V = np.ma.masked_array(V, mask=M)
         ax.quiver(
@@ -417,7 +403,7 @@ def extract_save_all_maps(
 
     from deeplabcut.utils.auxiliaryfunctions import (
         read_config,
-        attempttomakefolder,
+        attempt_to_make_folder,
         get_evaluation_folder,
         intersection_of_body_parts_and_ones_given_by_user,
     )
@@ -440,7 +426,7 @@ def extract_save_all_maps(
                 str(get_evaluation_folder(frac, shuffle, cfg, modelprefix=modelprefix)),
                 "maps",
             )
-        attempttomakefolder(dest_folder)
+        attempt_to_make_folder(dest_folder)
         filepath = "{imname}_{map}_{label}_{shuffle}_{frac}_{snap}.png"
         dest_path = os.path.join(dest_folder, filepath)
         for snap, maps in values.items():

@@ -1,15 +1,27 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
 import numpy as np
 import pandas as pd
-from threading import Event, Thread
+from threading import Event
+from deeplabcut.gui.utils import move_to_separate_thread
 from deeplabcut.refine_training_dataset.tracklets import TrackletManager
 from deeplabcut.utils.auxfun_videos import VideoReader
-from deeplabcut.utils.auxiliaryfunctions import attempttomakefolder
+from deeplabcut.utils.auxiliaryfunctions import attempt_to_make_folder
 from matplotlib.path import Path
-from matplotlib.widgets import Slider, LassoSelector, Button, CheckButtons
-from PySide2.QtWidgets import QMessageBox
+from matplotlib.widgets import Slider, LassoSelector, Button, CheckButtons, TextBox
+from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import QMutex
 
 
 class DraggablePoint:
@@ -82,12 +94,11 @@ class DraggablePoint:
             message = f"Do you want to remove the label {self.bodyParts}?"
             if self.likelihood is not None:
                 message += " You cannot undo this step!"
-            msg = QMessageBox(
-                title="Remove!",
-                text=message,
-            )
+            msg = QMessageBox()
+            msg.setWindowTitle("Warning!")
+            msg.setText(message)
             msg.setStandardButtons(msg.Yes | msg.No)
-            if msg == 2:
+            if msg.exec() == msg.Yes:
                 self.delete_data()
 
     def delete_data(self):
@@ -193,10 +204,10 @@ class BackgroundPlayer:
                     i -= 1
                 else:
                     i -= 2 * (len(self.speed) - 1)
-            if i > self.viz.manager.nframes:
+            if i >= self.viz.manager.nframes:
                 i = 0
             elif i < 0:
-                i = self.viz.manager.nframes
+                i = self.viz.manager.nframes - 1
             self.viz.slider.set_val(i)
 
     def pause(self):
@@ -238,6 +249,7 @@ class BackgroundPlayer:
         self.resume()
 
     def terminate(self, *args):
+        self.can_run.set()
         self.running = False
 
 
@@ -308,11 +320,15 @@ class TrackletVisualizer:
         self.picked_pair = []
         self.cuts = []
 
+        self.mutex = QMutex()
         self.player = BackgroundPlayer(self)
-        self.thread_player = Thread(target=self.player.run, daemon=True)
+        self.worker, self.thread_player = move_to_separate_thread(self.player.run)
         self.thread_player.start()
 
         self.dps = []
+
+        self.swap_id1 = None
+        self.swap_id2 = None
 
     def _prepare_canvas(self, manager, fig):
         params = {
@@ -345,7 +361,7 @@ class TrackletVisualizer:
 
         img = self.video.read_frame()
         self.im = self.ax1.imshow(img)
-        self.scat = self.ax1.scatter([], [], s=self.dotsize ** 2, picker=True)
+        self.scat = self.ax1.scatter([], [], s=self.dotsize**2, picker=True)
         self.scat.set_offsets(manager.xy[:, 0])
         self.scat.set_color(self.colors)
         self.trails = sum(
@@ -361,6 +377,7 @@ class TrackletVisualizer:
         )
         self.vline_x = self.ax2.axvline(0, 0, 1, c="k", ls=":")
         self.vline_y = self.ax3.axvline(0, 0, 1, c="k", ls=":")
+
         custom_lines = [
             plt.Line2D([0], [0], color=self.cmap(i), lw=4)
             for i in range(len(manager.individuals))
@@ -407,10 +424,15 @@ class TrackletVisualizer:
         self.ax_flag = self.fig.add_axes([0.75, 0.1, 0.05, 0.03])
         self.ax_save = self.fig.add_axes([0.80, 0.1, 0.05, 0.03])
         self.ax_help = self.fig.add_axes([0.85, 0.1, 0.05, 0.03])
+        self.ax_swap = self.fig.add_axes([0.90, 0.1, 0.05, 0.03])  # New button
+
         self.save_button = Button(self.ax_save, "Save", color="darkorange")
         self.save_button.on_clicked(self.save)
         self.help_button = Button(self.ax_help, "Help")
         self.help_button.on_clicked(self.display_help)
+        self.swap_button = Button(self.ax_swap, "Swap")  # New button
+        self.swap_button.on_clicked(self.swap_tracklets)  # Placeholder action
+
         self.drag_toggle = CheckButtons(self.ax_drag, ["Drag"])
         self.drag_toggle.on_clicked(self.toggle_draggable_points)
         self.flag_button = Button(self.ax_flag, "Flag")
@@ -426,10 +448,76 @@ class TrackletVisualizer:
         self.lasso_toggle.on_clicked(self.selector.toggle)
         self.display_traces(only_picked=False)
         self.ax1_background = self.fig.canvas.copy_from_bbox(self.ax1.bbox)
-        plt.show()
+        self.fig.show()
+
+        # Create dropdowns for selecting tracklets to swap, placing them near the swap button
+        self.ax_dropdown1 = self.fig.add_axes([0.9, 0.15, 0.05, 0.03])
+        self.ax_dropdown2 = self.fig.add_axes([0.9, 0.20, 0.05, 0.03])
+        self.textbox1 = TextBox(self.ax_dropdown1, "ID 1")
+        self.textbox2 = TextBox(self.ax_dropdown2, "ID 2")
+        self.textbox1.on_submit(self.set_swap_id1)
+        self.textbox2.on_submit(self.set_swap_id2)
 
     def show(self, fig=None):
         self._prepare_canvas(self.manager, fig)
+
+    def swap_tracklets(self, event):
+        if self.swap_id1 is not None and self.swap_id2 is not None:
+
+            # Get tracklet indices for each individual
+            inds1 = [
+                k
+                for k in range(len(self.manager.tracklet2id))
+                if self.manager.tracklet2id[k] == self.swap_id1
+            ]
+            inds2 = [
+                k
+                for k in range(len(self.manager.tracklet2id))
+                if self.manager.tracklet2id[k] == self.swap_id2
+            ]
+
+            print(f"Swapping tracklets {self.swap_id1} and {self.swap_id2}")
+
+            # Frames to swap
+            frames = []
+            if len(self.cuts) == 2:
+                frames = list(range(min(self.cuts), max(self.cuts) + 1))
+            elif len(self.cuts) == 1:
+                frames = [self.cuts[0]]
+            else:
+                frames = list(range(self.curr_frame, self.manager.nframes))
+
+            # Swap the tracklets
+            for i in range(min(len(inds1), len(inds2))):
+                self.manager.swap_tracklets(inds1[i], inds2[i], frames)
+                self.display_traces()
+                self.slider.set_val(self.curr_frame)
+
+    def set_swap_id1(self, val):
+        # check that the input is a valid from the list of individuals
+        if int(val) in self.manager.tracklet2id:
+            self.swap_id1 = int(val)
+            print("ID 1 set.")
+        else:
+            print(
+                f"Invalid ID. Please select a valid ID from the list of individuals: {set(self.manager.tracklet2id)}"
+            )
+            self.swap_id1 = None
+
+    def set_swap_id2(self, val):
+        # check that the input is a valid from the list of individuals
+        if int(val) in self.manager.tracklet2id:
+            self.swap_id2 = int(val)
+            print("ID 2 set.")
+        else:
+            print(
+                f"Invalid ID. Please select a valid ID from the list of individuals: {set(self.manager.tracklet2id)}"
+            )
+            self.swap_id2 = None
+
+    def terminate(self, event):
+        plt.close(self.fig)
+        self.player.terminate()
 
     def fill_shaded_areas(self):
         self.clean_collections()
@@ -574,12 +662,13 @@ class TrackletVisualizer:
             if len(self.cuts) > 1:
                 self.cuts.sort()
                 if self.picked_pair:
-                    self.manager.tracklet_swaps[self.picked_pair][
-                        self.cuts
-                    ] = ~self.manager.tracklet_swaps[self.picked_pair][self.cuts]
+                    self.manager.tracklet_swaps[self.picked_pair][self.cuts] = (
+                        ~self.manager.tracklet_swaps[self.picked_pair][self.cuts]
+                    )
                     self.fill_shaded_areas()
                     self.cuts = []
-                    self.ax_slider.lines.clear()
+                    for line in self.ax_slider.lines:
+                        line.remove()
         elif event.key == "backspace":
             if not self.dps:  # Last flag deletion
                 try:
@@ -671,7 +760,8 @@ class TrackletVisualizer:
                 if len(self.cuts) > 1:
                     mask[self.cuts[-2] : self.cuts[-1] + 1] = True
                     self.cuts = []
-                    self.ax_slider.lines.clear()
+                    for line in self.ax_slider.lines:
+                        line.remove()
                     self.clean_collections()
                 else:
                     return
@@ -775,9 +865,11 @@ class TrackletVisualizer:
         self.vline_y.set_xdata([val, val])
 
     def on_change(self, val):
+        self.mutex.lock()  # Make video frame retrieval thread-safe
         self.curr_frame = int(val)
         self.video.set_to_frame(self.curr_frame)
         img = self.video.read_frame()
+        self.mutex.unlock()
         if img is not None:
             # Automatically disable the draggable points
             if self.draggable:
@@ -790,7 +882,7 @@ class TrackletVisualizer:
 
     def update_dotsize(self, val):
         self.dotsize = val
-        self.scat.set_sizes([self.dotsize ** 2])
+        self.scat.set_sizes([self.dotsize**2])
 
     @staticmethod
     def calc_distance(x1, y1, x2, y2):
@@ -821,13 +913,17 @@ class TrackletVisualizer:
                 " already extracted (more will be added)!",
             )
         else:
-            attempttomakefolder(tmpfolder)
+            attempt_to_make_folder(tmpfolder)
         index = []
         for ind in inds:
             imagename = os.path.join(
                 tmpfolder, "img" + str(ind).zfill(strwidth) + ".png"
             )
-            index.append(os.path.join(*imagename.rsplit(os.path.sep, 3)[-3:]))
+            index.append(
+                tuple(
+                    (os.path.join(*imagename.rsplit(os.path.sep, 3)[-3:])).split("\\")
+                )
+            )
             if not os.path.isfile(imagename):
                 self.video.set_to_frame(ind)
                 frame = self.video.read_frame()
@@ -852,8 +948,11 @@ class TrackletVisualizer:
             cols.loc[mask] = np.nan
             return cols
 
-        df = df.groupby(level="bodyparts", axis=1).apply(filter_low_prob, prob=pcutoff)
-        df.index = index
+        df = df.groupby(level="bodyparts", axis=1, group_keys=False).apply(
+            filter_low_prob, prob=pcutoff
+        )
+        df.index = pd.MultiIndex.from_tuples(index)
+
         machinefile = os.path.join(
             tmpfolder, "machinelabels-iter" + str(self.manager.cfg["iteration"]) + ".h5"
         )
@@ -868,9 +967,7 @@ class TrackletVisualizer:
             df.to_csv(os.path.join(tmpfolder, "machinelabels.csv"))
 
         # Merge with the already existing annotated data
-        df.columns.set_levels(
-            [self.manager.cfg["scorer"]], level="scorer", inplace=True
-        )
+        df.columns = df.columns.set_levels([self.manager.cfg["scorer"]], level="scorer")
         df.drop("likelihood", level="coords", axis=1, inplace=True)
         output_path = os.path.join(
             tmpfolder, f'CollectedData_{self.manager.cfg["scorer"]}.h5'

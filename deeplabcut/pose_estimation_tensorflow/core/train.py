@@ -1,20 +1,22 @@
-"""
-DeepLabCut2.0 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Adapted from DeeperCut by Eldar Insafutdinov
+# https://github.com/eldar/pose-tensorflow
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
-Please see AUTHORS for contributors.
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-
-Adapted from DeeperCut by Eldar Insafutdinov
-https://github.com/eldar/pose-tensorflow
-
-"""
 import argparse
 import logging
 import os
 import threading
+import warnings
 from pathlib import Path
 
 import tensorflow as tf
@@ -29,6 +31,7 @@ from deeplabcut.pose_estimation_tensorflow.datasets import (
 )
 from deeplabcut.pose_estimation_tensorflow.nnets import PoseNetFactory
 from deeplabcut.pose_estimation_tensorflow.util.logging import setup_logging
+from deeplabcut.utils import auxfun_models
 
 
 class LearningRate(object):
@@ -86,7 +89,8 @@ def load_and_enqueue(sess, enqueue_op, coord, dataset, placeholders):
 def start_preloading(sess, enqueue_op, dataset, placeholders):
     coord = tf.compat.v1.train.Coordinator()
     t = threading.Thread(
-        target=load_and_enqueue, args=(sess, enqueue_op, coord, dataset, placeholders),
+        target=load_and_enqueue,
+        args=(sess, enqueue_op, coord, dataset, placeholders),
     )
     t.start()
     return coord, t
@@ -216,6 +220,16 @@ def train(
     coord, thread = start_preloading(sess, enqueue_op, dataset, placeholders)
     train_writer = tf.compat.v1.summary.FileWriter(cfg["log_dir"], sess.graph)
 
+    # Auto-switch to Adam on M1/M2 chips, as the momentum optimizer crashes
+    from tensorflow.python.platform import build_info
+
+    info = build_info.build_info
+    if not info["is_cuda_build"]:  # Apple Silicon is not built with CUDA
+        warnings.warn("Switching to Adam, as SGD crashes on Apple Silicon.")
+        cfg["optimizer"] = "adam"
+        cfg["lr_init"] = 5e-4
+        cfg["multi_step"] = [[1e-4, 7500], [5e-5, 12000], [1e-5, 200000]]
+
     if cfg.get("freezeencoder", False):
         if "efficientnet" in net_type:
             print("Freezing ONLY supported MobileNet/ResNet currently!!")
@@ -230,7 +244,8 @@ def train(
     sess.run(tf.compat.v1.local_variables_initializer())
 
     # Restore variables from disk.
-    restorer.restore(sess, cfg["init_weights"])
+    auxfun_models.smart_restore(restorer, sess, cfg["init_weights"], net_type)
+
     if maxiters is None:
         max_iter = int(cfg["multi_step"][-1][1])
     else:

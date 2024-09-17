@@ -1,12 +1,13 @@
-"""
-DeepLabCut2.2 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
-
-Please see AUTHORS for contributors.
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-"""
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
 import os
 import os.path
@@ -32,6 +33,7 @@ from deeplabcut.utils import (
     auxfun_models,
     auxfun_multianimal,
 )
+
 
 def format_multianimal_training_data(
     df,
@@ -113,7 +115,7 @@ def create_multianimaltraining_dataset(
     Only the videos included in the config file are used to create this dataset.\n
     [OPTIONAL] Use the function 'add_new_videos' at any stage of the project to add more videos to the project.
 
-    Imporant differences to standard:
+    Important differences to standard:
      - stores coordinates with numdigits as many digits
      - creates
     Parameter
@@ -198,7 +200,7 @@ def create_multianimaltraining_dataset(
     # Create path for training sets & store data there
     trainingsetfolder = auxiliaryfunctions.get_training_set_folder(cfg)
     full_training_path = Path(project_path, trainingsetfolder)
-    auxiliaryfunctions.attempttomakefolder(full_training_path, recursive=True)
+    auxiliaryfunctions.attempt_to_make_folder(full_training_path, recursive=True)
 
     Data = merge_annotateddatasets(cfg, full_training_path)
     if Data is None:
@@ -238,7 +240,8 @@ def create_multianimaltraining_dataset(
         # see Suppl. Fig S9c in Lauer et al., 2022.
         if n_edges_orig >= n_edges_threshold:
             partaffinityfield_graph = auxfun_multianimal.prune_paf_graph(
-                partaffinityfield_graph, average_degree=paf_graph_degree,
+                partaffinityfield_graph,
+                average_degree=paf_graph_degree,
             )
     else:
         if paf_graph == "config":
@@ -269,9 +272,7 @@ def create_multianimaltraining_dataset(
     # Loading the encoder (if necessary downloading from TF)
     dlcparent_path = auxiliaryfunctions.get_deeplabcut_path()
     defaultconfigfile = os.path.join(dlcparent_path, "pose_cfg.yaml")
-    model_path, num_shuffles = auxfun_models.check_for_weights(
-        net_type, Path(dlcparent_path), num_shuffles
-    )
+    model_path = auxfun_models.check_for_weights(net_type, Path(dlcparent_path))
 
     if Shuffles is None:
         Shuffles = range(1, num_shuffles + 1, 1)
@@ -360,13 +361,13 @@ def create_multianimaltraining_dataset(
             modelfoldername = auxiliaryfunctions.get_model_folder(
                 trainFraction, shuffle, cfg
             )
-            auxiliaryfunctions.attempttomakefolder(
+            auxiliaryfunctions.attempt_to_make_folder(
                 Path(config).parents[0] / modelfoldername, recursive=True
             )
-            auxiliaryfunctions.attempttomakefolder(
+            auxiliaryfunctions.attempt_to_make_folder(
                 str(Path(config).parents[0] / modelfoldername / "train")
             )
-            auxiliaryfunctions.attempttomakefolder(
+            auxiliaryfunctions.attempt_to_make_folder(
                 str(Path(config).parents[0] / modelfoldername / "test")
             )
 
@@ -422,9 +423,9 @@ def create_multianimaltraining_dataset(
                 "multi_step": [[1e-4, 7500], [5 * 1e-5, 12000], [1e-5, 200000]],
                 "save_iters": 10000,
                 "display_iters": 500,
-                "num_idchannel": len(cfg["individuals"])
-                if cfg.get("identity", False)
-                else 0,
+                "num_idchannel": (
+                    len(cfg["individuals"]) if cfg.get("identity", False) else 0
+                ),
                 "crop_size": list(crop_size),
                 "crop_sampling": crop_sampling,
             }

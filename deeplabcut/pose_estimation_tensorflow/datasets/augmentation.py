@@ -1,3 +1,13 @@
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 import imgaug.augmenters as iaa
 import numpy as np
 from imgaug import KeypointsOnImage
@@ -36,7 +46,11 @@ class KeypointFliplr(iaa.Fliplr):
 
 class KeypointAwareCropToFixedSize(iaa.CropToFixedSize):
     def __init__(
-        self, width, height, max_shift=0.4, crop_sampling="hybrid",
+        self,
+        width,
+        height,
+        max_shift=0.4,
+        crop_sampling="hybrid",
     ):
         """
         Parameters
@@ -59,7 +73,9 @@ class KeypointAwareCropToFixedSize(iaa.CropToFixedSize):
             or "hybrid" (alternating randomly between "uniform" and "density").
         """
         super(KeypointAwareCropToFixedSize, self).__init__(
-            width, height, name="kptscrop",
+            width,
+            height,
+            name="kptscrop",
         )
         # Clamp to 40% of crop size to ensure that at least
         # the center keypoint remains visible after the offset is applied.
@@ -92,6 +108,7 @@ class KeypointAwareCropToFixedSize(iaa.CropToFixedSize):
             else:
                 h, w = batch.images[n].shape[:2]
                 kpts = batch.keypoints[n].to_xy_array()
+                kpts = kpts[~np.isnan(kpts).all(axis=1)]
                 n_kpts = kpts.shape[0]
                 inds = np.arange(n_kpts)
                 if sampling == "density":

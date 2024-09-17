@@ -1,18 +1,21 @@
-"""
-DeepLabCut2.0 Toolbox (deeplabcut.org)
-© A. & M. Mathis Labs
-https://github.com/DeepLabCut/DeepLabCut
-Please see AUTHORS for contributors.
+#
+# DeepLabCut Toolbox (deeplabcut.org)
+# © A. & M.W. Mathis Labs
+# https://github.com/DeepLabCut/DeepLabCut
+#
+# Please see AUTHORS for contributors.
+# https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
+#
+# Licensed under GNU Lesser General Public License v3.0
+#
 
-https://github.com/DeepLabCut/DeepLabCut/blob/master/AUTHORS
-Licensed under GNU Lesser General Public License v3.0
-"""
 
 import argparse
 import os
 import pickle
 import re
 from pathlib import Path
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -180,6 +183,7 @@ def extract_outlier_frames(
     shuffle=1,
     trainingsetindex=0,
     outlieralgorithm="jump",
+    frames2use=None,
     comparisonbodyparts="all",
     epsilon=20,
     p_bound=0.01,
@@ -237,6 +241,10 @@ def extract_outlier_frames(
         * ``'jump'`` identifies larger jumps than 'epsilon' in any body part
         * ``'uncertain'`` looks for frames with confidence below p_bound
         * ``'manual'`` launches a GUI from which the user can choose the frames
+        * ``'list'`` looks for user to provide a list of frame numbers to use, 'frames2use'. In this case, ``'extractionalgorithm'`` is forced to be ``'uniform.'``
+
+    frames2use: list[str], optional, default=None
+        If ``'outlieralgorithm'`` is ``'list'``, provide the list of frames here.
 
     comparisonbodyparts: list[str] or str, optional, default="all"
         This selects the body parts for which the comparisons with the outliers are
@@ -382,10 +390,19 @@ def extract_outlier_frames(
             df, dataname, _, _ = auxiliaryfunctions.load_analyzed_data(
                 videofolder, vname, DLCscorer, track_method=track_method
             )
+            metadata = auxiliaryfunctions.load_video_metadata(
+                videofolder, vname, DLCscorer
+            )
             nframes = len(df)
             startindex = max([int(np.floor(nframes * cfg["start"])), 0])
             stopindex = min([int(np.ceil(nframes * cfg["stop"])), nframes])
             Index = np.arange(stopindex - startindex) + startindex
+
+            # offset if the data was cropped
+            if metadata.get("data", {}).get("cropping"):
+                x1, _, y1, _ = metadata["data"]["cropping_parameters"]
+                df.iloc[:, df.columns.get_level_values(level="coords") == "x"] += x1
+                df.iloc[:, df.columns.get_level_values(level="coords") == "y"] += y1
 
             df = df.iloc[Index]
             mask = df.columns.get_level_values("bodyparts").isin(bodyparts)
@@ -398,8 +415,8 @@ def extract_outlier_frames(
             elif outlieralgorithm == "jump":
                 temp_dt = df_temp.diff(axis=0) ** 2
                 temp_dt.drop("likelihood", axis=1, level="coords", inplace=True)
-                sum_ = temp_dt.sum(axis=1, level=1)
-                ind = df_temp.index[(sum_ > epsilon ** 2).any(axis=1)].tolist()
+                sum_ = temp_dt.groupby(level="bodyparts", axis=1).sum()
+                ind = df_temp.index[(sum_ > epsilon**2).any(axis=1)].tolist()
                 Indices.extend(ind)
             elif outlieralgorithm == "fitting":
                 d, o = compute_deviations(
@@ -418,8 +435,35 @@ def extract_outlier_frames(
             elif outlieralgorithm == "manual":
                 from deeplabcut.gui.widgets import launch_napari
 
-                _ = launch_napari()
+                added_video = attempt_to_add_video(
+                    config=config,
+                    video=video,
+                    copy_videos=copy_videos,
+                    coords=None,
+                )
+                if added_video:
+                    project_video_path = (
+                        Path(cfg["project_path"]) / "videos" / Path(video).name
+                    )
+                    _ = launch_napari([project_video_path, dataname])
                 return
+
+            elif outlieralgorithm == "list":
+                if frames2use is not None:
+                    try:
+                        frames2use = np.array(frames2use).astype("int")
+                    except ValueError() as e:
+                        print(
+                            "Could not cast frames2use into np array, please check that frames2use is a simply a list of integers!"
+                        )
+                        raise
+                    Indices.extend(frames2use)
+                else:
+                    raise ValueError(
+                        'Expected list of frames2use for outlieralgorithm "list"!'
+                    )
+            else:
+                raise ValueError(f"outlieralgorithm {outlieralgorithm} not recognized!")
 
             # Run always except when the outlieralgorithm == manual.
             if not outlieralgorithm == "manual":
@@ -505,7 +549,6 @@ def FitSARIMAXModel(x, p, pcutoff, alpha, ARdegree, MAdegree, nforecast=0, disp=
     Y = x.copy()
     Y[p < pcutoff] = np.nan  # Set uncertain estimates to nan (modeled as missing data)
     if np.sum(np.isfinite(Y)) > 10:
-
         # SARIMAX implementation has better prediction models than simple ARIMAX (however we do not use the seasonal etc. parameters!)
         mod = sm.tsa.statespace.SARIMAX(
             Y.flatten(),
@@ -517,7 +560,9 @@ def FitSARIMAXModel(x, p, pcutoff, alpha, ARdegree, MAdegree, nforecast=0, disp=
         # mod = sm.tsa.ARIMA(Y, order=(ARdegree,0,MAdegree)) #order=(ARdegree,0,MAdegree)
         try:
             res = mod.fit(disp=disp)
-        except ValueError:  # https://groups.google.com/forum/#!topic/pystatsmodels/S_Fo53F25Rk (let's update to statsmodels 0.10.0 soon...)
+        except (
+            ValueError
+        ):  # https://groups.google.com/forum/#!topic/pystatsmodels/S_Fo53F25Rk (let's update to statsmodels 0.10.0 soon...)
             startvalues = np.array([convertparms2start(pn) for pn in mod.param_names])
             res = mod.fit(start_params=startvalues, disp=disp)
         except np.linalg.LinAlgError:
@@ -595,6 +640,57 @@ def compute_deviations(
         return d, o
 
 
+def attempt_to_add_video(
+    config: str,
+    video: str,
+    copy_videos: bool,
+    coords: Optional[List],
+) -> bool:
+    """
+    Add new videos to the config file at any stage of the project.
+
+    Parameters
+    ----------
+    config : string
+        Full path of the config file in the project.
+
+    video : string
+        Full path of the video to add to the project.
+
+    copy_videos : bool, optional
+        If this is set to True, the videos will be copied to the project/videos directory. If False, the symlink of the
+        videos will be copied instead. The default is
+        ``False``; if provided it must be either ``True`` or ``False``.
+
+    coords: list, optional
+        A list containing the list of cropping coordinates of the video. The default is set to None.
+
+    Returns
+    -------
+    True iff the video was successfully added to the project
+    """
+    from deeplabcut.create_project import add
+
+    # make sure coords and videos are a list
+    videos = [video]
+    if coords is not None:
+        coords = [coords]
+
+    try:
+        add.add_new_videos(config, videos, coords=coords, copy_videos=copy_videos)
+    except:
+        # can we make a catch here? - in fact we should drop indices from DataCombined
+        # if they are in CollectedData.. [ideal behavior; currently pretty unlikely]
+        print(
+            f"AUTOMATIC ADDING OF VIDEO TO CONFIG FILE FAILED! You need to "
+            "do this manually for including it in the config.yaml file!"
+        )
+        print("Videopath:", video, "Coordinates for cropping:", coords)
+        return False
+
+    return True
+
+
 def ExtractFramesbasedonPreselection(
     Index,
     extractionalgorithm,
@@ -609,12 +705,12 @@ def ExtractFramesbasedonPreselection(
     with_annotations=True,
     copy_videos=False,
 ):
-    from deeplabcut.create_project import add
-
     start = cfg["start"]
     stop = cfg["stop"]
     numframes2extract = cfg["numframes2pick"]
-    bodyparts = auxiliaryfunctions.intersection_of_body_parts_and_ones_given_by_user(cfg, "all")
+    bodyparts = auxiliaryfunctions.intersection_of_body_parts_and_ones_given_by_user(
+        cfg, "all"
+    )
 
     videofolder = str(Path(video).parents[0])
     vname = str(Path(video).stem)
@@ -622,7 +718,7 @@ def ExtractFramesbasedonPreselection(
     if os.path.isdir(tmpfolder):
         print("Frames from video", vname, " already extracted (more will be added)!")
     else:
-        auxiliaryfunctions.attempttomakefolder(tmpfolder, recursive=True)
+        auxiliaryfunctions.attempt_to_make_folder(tmpfolder, recursive=True)
 
     nframes = len(data)
     print("Loading video...")
@@ -638,37 +734,54 @@ def ExtractFramesbasedonPreselection(
         duration = clip.duration
 
     if cfg["cropping"]:  # one might want to adjust
-        coords = (cfg["x1"], cfg["x2"], cfg["y1"], cfg["y2"])
+        coords = cfg["video_sets"].get(video, {}).get("crop")
+        if coords is not None:
+            coords = list(map(int, coords.split(", ")))
     else:
         coords = None
 
+    print("Cropping coords:", coords)
     print("Duration of video [s]: ", duration, ", recorded @ ", fps, "fps!")
     print("Overall # of frames: ", nframes, "with (cropped) frame dimensions: ")
     if extractionalgorithm == "uniform":
         if opencv:
+            if coords is not None:
+                vid.set_bbox(*coords)
             frames2pick = frameselectiontools.UniformFramescv2(
                 vid, numframes2extract, start, stop, Index
             )
         else:
+            if coords is not None:
+                clip = clip.crop(
+                    y1=coords[2],
+                    y2=coords[3],
+                    x1=coords[0],
+                    x2=coords[1],
+                )
             frames2pick = frameselectiontools.UniformFrames(
                 clip, numframes2extract, start, stop, Index
             )
     elif extractionalgorithm == "kmeans":
         if opencv:
+            if coords is not None:
+                vid.set_bbox(*coords)
             frames2pick = frameselectiontools.KmeansbasedFrameselectioncv2(
                 vid,
                 numframes2extract,
                 start,
                 stop,
-                cfg["cropping"],
-                coords,
                 Index,
                 resizewidth=cluster_resizewidth,
                 color=cluster_color,
             )
         else:
-            if cfg["cropping"]:
-                clip = clip.crop(y1=cfg["y1"], y2=cfg["x2"], x1=cfg["x1"], x2=cfg["x2"])
+            if coords is not None:
+                clip = clip.crop(
+                    y1=coords[2],
+                    y2=coords[3],
+                    x1=coords[0],
+                    x2=coords[1],
+                )
             frames2pick = frameselectiontools.KmeansbasedFrameselection(
                 clip,
                 numframes2extract,
@@ -693,8 +806,6 @@ def ExtractFramesbasedonPreselection(
         if opencv:
             PlottingSingleFramecv2(
                 vid,
-                cfg["cropping"],
-                coords,
                 data,
                 bodyparts,
                 tmpfolder,
@@ -731,18 +842,13 @@ def ExtractFramesbasedonPreselection(
 
     # Extract annotations based on DeepLabCut and store in the folder (with name derived from video name) under labeled-data
     if len(frames2pick) > 0:
-        try:
-            if cfg["cropping"]:
-                add.add_new_videos(
-                    config, [video], coords=[coords], copy_videos=copy_videos,
-                )  # make sure you pass coords as a list
-            else:
-                add.add_new_videos(config, [video], coords=None,  copy_videos=copy_videos)
-        except:  # can we make a catch here? - in fact we should drop indices from DataCombined if they are in CollectedData.. [ideal behavior; currently this is pretty unlikely]
-            print(
-                "AUTOMATIC ADDING OF VIDEO TO CONFIG FILE FAILED! You need to do this manually for including it in the config.yaml file!"
-            )
-            print("Videopath:", video, "Coordinates for cropping:", coords)
+        added_video = attempt_to_add_video(
+            config=config,
+            video=video,
+            copy_videos=copy_videos,
+            coords=coords,
+        )
+        if not added_video:
             pass
 
         if with_annotations:
@@ -751,15 +857,27 @@ def ExtractFramesbasedonPreselection(
             )
             if isinstance(data, pd.DataFrame):
                 df = data.loc[frames2pick]
-                df.index = pd.MultiIndex.from_tuples([
-                    ("labeled-data", vname, "img" + str(index).zfill(strwidth) + ".png")
-                    for index in df.index
-                ])  # exchange index number by file names.
+                df.index = pd.MultiIndex.from_tuples(
+                    [
+                        (
+                            "labeled-data",
+                            vname,
+                            "img" + str(index).zfill(strwidth) + ".png",
+                        )
+                        for index in df.index
+                    ]
+                )  # exchange index number by file names.
             elif isinstance(data, dict):
-                idx = pd.MultiIndex.from_tuples([
-                    ("labeled-data", vname, "img" + str(index).zfill(strwidth) + ".png")
-                    for index in frames2pick
-                ])
+                idx = pd.MultiIndex.from_tuples(
+                    [
+                        (
+                            "labeled-data",
+                            vname,
+                            "img" + str(index).zfill(strwidth) + ".png",
+                        )
+                        for index in frames2pick
+                    ]
+                )
                 filename = os.path.join(
                     str(tmpfolder), f"CollectedData_{cfg['scorer']}.h5"
                 )
@@ -884,7 +1002,7 @@ def PlottingSingleFrame(
                     plt.scatter(
                         df_x[ind, index],
                         df_y[ind, index],
-                        s=dotsize ** 2,
+                        s=dotsize**2,
                         color=colors(map2bp[i]),
                         alpha=alphavalue,
                     )
@@ -899,8 +1017,6 @@ def PlottingSingleFrame(
 
 def PlottingSingleFramecv2(
     cap,
-    crop,
-    coords,
     Dataframe,
     bodyparts2plot,
     tmpfolder,
@@ -925,16 +1041,11 @@ def PlottingSingleFramecv2(
     ):
         plt.axis("off")
         cap.set_to_frame(index)
-        frame = cap.read_frame()
+        frame = cap.read_frame(crop=True)
         if frame is None:
             print("Frame could not be read.")
             return
         image = img_as_ubyte(frame)
-        if crop:
-            image = image[
-                int(coords[2]) : int(coords[3]), int(coords[0]) : int(coords[1]), :
-            ]
-
         io.imsave(imagename1, image)
 
         if savelabeled:
@@ -963,7 +1074,7 @@ def PlottingSingleFramecv2(
                     plt.scatter(
                         df_x[ind, index],
                         df_y[ind, index],
-                        s=dotsize ** 2,
+                        s=dotsize**2,
                         color=colors(map2bp[i]),
                         alpha=alphavalue,
                     )
